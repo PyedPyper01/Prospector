@@ -1,0 +1,2429 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" id="themeColorMeta" content="#F4F6F9">
+<title>Postcode Prospector — district-tiled lead sourcing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0C1117; --panel:#131A23; --panel2:#19222D; --line:#2A3848;
+  --ink:#F2F6FA; --mut:#B7C2CF; --dim:#93A1B0;
+  --acc:#4BEFA0; --acc2:#35C684; --warn:#FFCB5C; --bad:#FF7B75; --info:#7CC5FF;
+  --r:10px;
+}
+html[data-theme="light"]{
+  --bg:#F4F6F9; --panel:#FFFFFF; --panel2:#FFFFFF; --line:#D5DCE5;
+  --ink:#16202B; --mut:#46566A; --dim:#5E6E80;
+  --acc:#0E8F5B; --acc2:#0B7A4D; --warn:#9A6A00; --bad:#C2342E; --info:#0B66B3;
+}
+html[data-theme="light"] body::before{opacity:.5;
+  background:radial-gradient(1100px 500px at 85% -10%, rgba(14,143,91,.08), transparent 60%),
+             radial-gradient(800px 420px at -10% 110%, rgba(11,102,179,.07), transparent 60%)}
+html[data-theme="light"] input[type=text],html[data-theme="light"] input[type=number],
+html[data-theme="light"] input[type=password],html[data-theme="light"] select,html[data-theme="light"] textarea{background:#FFFFFF;color:var(--ink)}
+html[data-theme="light"] .ghost{background:#FFFFFF;color:var(--mut);border:1px solid var(--line)}
+html[data-theme="light"] #log{background:#FFFFFF}
+html[data-theme="light"] th{background:var(--bg)}
+html[data-theme="light"] td{border-bottom:1px solid #E4E9F0}
+html[data-theme="light"] tr:hover td{background:#EFF3F8}
+html[data-theme="light"] .logo{color:#fff}
+html[data-theme="light"] .primary{color:#fff}
+html[data-theme="light"] .t-ind{background:rgba(14,143,91,.12);color:var(--acc2)}
+html[data-theme="light"] .t-chain{background:rgba(194,52,46,.12);color:var(--bad)}
+html[data-theme="light"] .t-en{background:rgba(11,102,179,.12);color:var(--info)}
+html[data-theme="light"] .t-q{background:rgba(154,106,0,.13);color:var(--warn)}
+html[data-theme="light"] .mbox{background:#FFFFFF}
+html[data-theme="light"] .modal{background:rgba(20,28,38,.45)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:'Plus Jakarta Sans',sans-serif;font-size:16px;min-height:100vh}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;
+  background:radial-gradient(1100px 500px at 85% -10%, rgba(62,224,143,.07), transparent 60%),
+             radial-gradient(800px 420px at -10% 110%, rgba(90,184,245,.06), transparent 60%)}
+header{display:flex;align-items:center;gap:14px;padding:18px 26px;border-bottom:1px solid var(--line);position:relative}
+.logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--acc),#1d7a52);display:grid;place-items:center;font-family:Sora;font-weight:800;color:#06281a;font-size:16px}
+h1{font-family:Sora;font-size:18px;font-weight:700;letter-spacing:.2px}
+h1 span{color:var(--acc)}
+.tag{color:var(--dim);font-size:14px;margin-left:2px}
+.hbtns{margin-left:auto;display:flex;gap:8px}
+main{display:grid;grid-template-columns:360px 1fr;gap:0;min-height:calc(100vh - 71px)}
+.side{border-right:1px solid var(--line);padding:20px;display:flex;flex-direction:column;gap:16px;background:var(--panel)}
+.work{padding:20px 26px;overflow:auto}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.card h3{font-family:Sora;font-size:13px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--mut);margin-bottom:10px}
+label{display:block;font-size:13.5px;color:var(--mut);margin:10px 0 5px;letter-spacing:.2px}
+input[type=text],input[type=number],input[type=password],select,textarea{
+  width:100%;background:#0D1218;border:1px solid var(--line);border-radius:7px;color:var(--ink);
+  padding:10px 12px;font-family:inherit;font-size:15px;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(75,239,160,.22)}
+button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+a:focus-visible{outline:3px solid var(--info);outline-offset:2px}
+textarea{resize:vertical;min-height:60px;font-size:14px;line-height:1.55}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.chk{display:flex;align-items:center;gap:9px;font-size:14.5px;color:var(--ink);margin:8px 0;cursor:pointer}.chk input{width:17px;height:17px}
+.chk input{accent-color:var(--acc)}
+button{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;border:none;border-radius:8px;cursor:pointer;font-size:14.5px;padding:10px 15px;transition:filter .15s,transform .05s}
+button:active{transform:translateY(1px)}
+.primary{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#062318;font-family:Sora;font-weight:700;letter-spacing:.3px;width:100%;padding:12px;font-size:14px}
+.primary:disabled{filter:grayscale(.7) brightness(.6);cursor:not-allowed}
+.ghost{background:#0D1218;color:var(--mut);border:1px solid var(--line)}
+.ghost:hover{color:var(--ink);border-color:#2c3a4a}
+.small{font-size:13px;padding:8px 12px}
+.stat{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px 16px;min-width:110px}
+.pill b{display:block;font-family:Sora;font-size:24px;font-weight:700}
+.pill span{font-size:12px;color:var(--mut);letter-spacing:.7px;text-transform:uppercase}
+.pill.g b{color:var(--acc)}.pill.y b{color:var(--warn)}.pill.r b{color:var(--bad)}.pill.b b{color:var(--info)}
+#log{font-family:ui-monospace,monospace;font-size:13.5px;line-height:1.6;color:var(--mut);background:#0D1218;border:1px solid var(--line);
+  border-radius:8px;padding:10px;height:96px;overflow:auto;white-space:pre-wrap;margin-bottom:14px}
+#log .ok{color:var(--acc)} #log .er{color:var(--bad)} #log .wn{color:var(--warn)}
+.prog{height:6px;background:#0D1218;border-radius:4px;overflow:hidden;margin:0 0 14px;border:1px solid var(--line)}
+.prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc2),var(--acc));transition:width .25s}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{font-family:Sora;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--mut);text-align:left;
+  padding:9px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2;cursor:pointer;white-space:nowrap}
+td{padding:10px 11px;border-bottom:1px solid #1a2330;vertical-align:top;line-height:1.45}
+tr:hover td{background:#10161e}
+td a{color:var(--info);text-decoration:underline;text-underline-offset:2px}
+td a:hover{text-decoration:underline}
+.b{font-weight:600}
+.muted{color:var(--dim)}
+.empty{color:var(--mut)}
+.tagx{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.6px;border-radius:5px;padding:2px 7px;text-transform:uppercase}
+.t-ind{background:rgba(62,224,143,.12);color:var(--acc)}
+.t-chain{background:rgba(244,101,95,.14);color:var(--bad)}
+.t-q{background:rgba(245,184,61,.13);color:var(--warn)}
+.t-en{background:rgba(90,184,245,.13);color:var(--info)}
+.empty{padding:70px 20px;text-align:center;color:var(--dim)}
+.empty b{font-family:Sora;display:block;font-size:17px;color:var(--mut);margin-bottom:6px}
+.modal{position:fixed;inset:0;background:rgba(4,7,10,.72);display:none;place-items:center;z-index:50;backdrop-filter:blur(3px)}
+.modal.open{display:grid}
+.mbox{width:min(560px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+.mbox h2{font-family:Sora;font-size:16px;margin-bottom:4px}
+.mbox p{font-size:14px;color:var(--mut);margin-bottom:12px;line-height:1.6}
+.mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.keyok{color:var(--acc);font-size:13px}
+#regionPanel{background:var(--panel2);border:1px solid var(--info);border-radius:var(--r);padding:12px 14px;margin-bottom:14px}
+.rhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px;font-family:Sora}
+.rhead b{font-size:14px}.rtotal{font-size:13px;color:var(--info)}
+.rchips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.rchip{font-size:12px;font-weight:600;border-radius:6px;padding:3px 9px;letter-spacing:.4px;border:1px solid var(--line)}
+.rchip.rdone{background:rgba(62,224,143,.13);color:var(--acc);border-color:var(--acc2)}
+.rchip.rcur{background:rgba(245,184,61,.16);color:var(--warn);border-color:var(--warn)}
+.rchip.rwait{background:transparent;color:var(--dim)}
+.rbtns{display:flex;gap:8px}
+@media(max-width:980px){main{grid-template-columns:1fr}.side{border-right:none;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">P</div>
+  <div><h1>Postcode <span>Prospector</span> <span style="font-size:11px;color:var(--acc);font-weight:700">v15 · you pick, we write up</span></h1><div class="tag">District-tiled lead sourcing · independents-first · funnel-bounded</div></div>
+  <div id="conn" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--line);color:var(--mut)">checking…</div>
+  <div class="hbtns">
+    <button class="ghost small" id="themeBtn" onclick="toggleTheme()">☀ Light</button>
+    <button class="ghost small" onclick="systemCheck()">🩺 System check</button>
+    <button class="ghost small" onclick="openSettings()">⚙ Settings & API keys</button>
+    <button class="ghost small" id="exportCsv" onclick="exportData('csv')" disabled>Export CSV</button>
+    <button class="ghost small" id="exportXlsx" onclick="exportData('xlsx')" disabled>Export XLSX</button>
+    <button class="ghost small" id="exportBrevo" onclick="exportBrevo()" disabled>Export for Brevo</button>
+  </div>
+</header>
+<main>
+  <aside class="side">
+    <div class="card">
+      <h3>1 · Geography</h3>
+      <label>Postcode area <span class="muted">(one area e.g. CO — or several e.g. <b>CO, CM, SS</b> to sweep them all)</span></label>
+      <input type="text" id="area" placeholder="CO   or   CO, CM, SS, IG, RM" style="text-transform:uppercase" oninput="suggestDistricts()">
+      <label>Districts to tile <span class="muted">(auto-filled — edit freely)</span></label>
+      <textarea id="districts"></textarea>
+      <label>Data source <span class="muted">(free sources = £0 search cost)</span></label>
+      <select id="source">
+        <option value="google">Google Places — paid (~3p/search), best phone + website coverage</option>
+        <option value="auto">FREE: auto — official register if one fits the category, else OpenStreetMap</option>
+        <option value="osm">FREE: OpenStreetMap only</option>
+        <option value="ch">FREE: Companies House by SIC (complete registered universe)</option>
+        <option value="both">Google + free sources merged (most complete, still paid)</option>
+      </select>
+      <label>Town <span class="muted">(used as a hint with districts, or on its own if no area given)</span></label>
+      <input type="text" id="town">
+      <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)">
+        <label style="margin-top:0">Region sweep <span class="muted">(county → areas, or type areas — runs each area in turn)</span></label>
+        <div class="row" style="gap:8px">
+          <select id="county" onchange="onCountyPick()" style="flex:1.1"></select>
+          <input type="text" id="regionAreas" placeholder="CO, CM, SS, IG, RM" style="flex:1;text-transform:uppercase">
+        </div>
+        <button class="ghost small" style="width:100%;margin-top:8px;border-color:var(--info);color:var(--info)" id="regionRun" onclick="runRegionSweep()">▶ Run region sweep (multi-area)</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>2 · Your request</h3>
+      <label>Type what you want — your words, per supplier <span class="muted">(run as: <i>request + district</i>)</span></label>
+      <textarea id="term" style="min-height:64px"></textarea>
+      <label>Also exclude names containing <span class="muted">(optional, this request only)</span></label>
+      <input type="text" id="negKw">
+    </div>
+    <div class="card">
+      <h3>3 · Rules</h3>
+      <label class="chk"><input type="checkbox" id="ruleChains" checked> Omit chains & groups (blocklist + ownership check)</label>
+      <label class="chk"><input type="checkbox" id="ruleOpen" checked> Operational businesses only</label>
+      <label class="chk"><input type="checkbox" id="ruleArea" checked> Strict area match — drop results whose postcode is outside the searched area</label>
+      <label class="chk"><input type="checkbox" id="aiClassify" checked> <b>AI classify every result</b> — Claude judges what each business actually is (catches mortgage brokers, chains, wrong trades)</label>
+      <label class="chk"><input type="checkbox" id="autoEnrich" checked> Auto-enrich after sweep (emails · contacts · ownership purge)</label>
+      <label class="chk"><input type="checkbox" id="meteredEnrich" checked> Metered enrichment (Firecrawl + Hunter) <span class="muted">— uncheck for free/cheap validation runs</span></label>
+      <div class="row">
+        <div><label>Min reviews</label><input type="number" id="minRev" value="0" min="0"></div>
+        <div><label>Min rating</label><input type="number" id="minRate" value="0" min="0" max="5" step="0.1"></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="ruleWeb"> Must have website</label>
+      <label class="chk"><input type="checkbox" id="rulePhone"> Must have phone</label>
+      <label>Your exclusions <span class="muted">(optional — or just write them in your request: "omit …", "exclude …")</span></label>
+      <textarea id="blocklist"></textarea>
+      <label>Funnel cap <span class="muted">(stop after N kept leads · 0 = no cap)</span></label>
+      <input type="number" id="cap" value="0" min="0">
+    </div>
+    <div class="card">
+      <h3>4 · Verify (optional)</h3>
+      <label>Trade-register members <span class="muted">(paste names — e.g. SAIF, NAFD, Humanists UK. One per line or comma-separated)</span></label>
+      <textarea id="register" style="min-height:70px"></textarea>
+      <label>Register name <span class="muted">(shown as the badge)</span></label>
+      <input type="text" id="registerName">
+      <button class="ghost small" style="width:100%;margin-top:8px" onclick="crossReference()">✓ Cross-reference kept leads</button>
+      <label style="margin-top:14px">Companies House universe check <span class="muted">(SIC code — 96030 = funeral activities, 47760 = florists, 69102 = solicitors)</span></label>
+      <input type="text" id="sic">
+      <button class="ghost small" style="width:100%;margin-top:8px" onclick="universeCheck()">◎ Show full registered universe & coverage</button>
+      <label style="margin-top:14px">Official register check <span class="muted">(picks the right authority for what you searched)</span></label>
+      <button class="ghost small" style="width:100%" onclick="verifyRegister()">⚖ Verify against the governing register (auto-detects FCA / CQC / FSA / EA / Charity / SRA)</button>
+    </div>
+    <div class="card">
+      <h3>4½ · Batch queue <span class="muted">(unattended matrix of areas × categories)</span></h3>
+      <label>Categories — one request per line <span class="muted">(each line run exactly as typed)</span></label>
+      <textarea id="batchCats" style="min-height:80px" placeholder="funeral directors&#10;florists&#10;probate solicitors"></textarea>
+      <label>Postcode areas <span class="muted">(comma-separated, or <b>ALL</b> for every England &amp; Wales area)</span></label>
+      <input type="text" id="batchAreas" value="ALL" style="text-transform:uppercase">
+      <div class="row" style="gap:8px">
+        <div><label>Pages/district</label><select id="batchPages"><option value="1" selected>1 (cheapest)</option><option value="2">2</option><option value="3">3</option></select></div>
+        <div><label>Enrich each</label><select id="batchEnrich"><option value="1" selected>Yes</option><option value="0">No (faster)</option></select></div>
+      </div>
+      <button class="ghost small" style="width:100%;margin-top:8px" onclick="estimateBatch()">⌗ Estimate size &amp; cost first</button>
+      <button class="ghost small" style="width:100%;margin-top:6px" onclick="startBatch()">⏩ Start batch queue</button>
+      <button class="ghost small" style="width:100%;margin-top:6px" onclick="BATCH.stop=true">⏹ Stop after current job</button>
+      <button class="ghost small" style="width:100%;margin-top:6px" onclick="exportMaster()">⬇ Export MASTER (all jobs so far)</button>
+      <button class="ghost small" style="width:100%;margin-top:6px" onclick="resetBatch()">↺ Reset batch progress</button>
+      <label style="margin-top:12px">Webhook URL <span class="muted">(optional — POSTs each completed area+category as JSON)</span></label>
+      <input type="text" id="webhook" placeholder="https://…">
+    </div>
+    <div class="card">
+      <h3>4¾ · Register supply <span class="muted">(from the Email Lead Generator)</span></h3>
+      <label>Load <b>register_supply.csv</b> <span class="muted">— register-verified independents; merged into every sweep of a matching area+category.</span></label>
+      <input type="file" id="regSupplyFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadRegisterSupply(r.result);};r.readAsText(f);})(this.files[0])">
+      <div id="regSupplyStatus" class="muted" style="font-size:12px;margin-top:6px">No register file loaded — sweeps run on discovery only.</div>
+    </div>
+    <button class="primary" id="run" onclick="runSearch()">▶ Run district sweep</button>
+    <button class="ghost" id="enrichBtn" onclick="enrichAll()" disabled>✦ Enrich kept leads (email · contact · ownership)</button>
+    <div class="card" style="border-color:var(--acc2)">
+      <h3>5 · AfterLife vetting</h3>
+      <p style="font-size:12.5px;color:var(--dim);line-height:1.5;margin:-2px 0 10px">Run after classify, register-verify &amp; enrich. Claude checks independence (blocklist · Companies House PSC · site small-print), scores bereavement fit &amp; quality, ranks, and writes marketplace copy for approvals.</p>
+      <button class="primary" id="vetBtn" onclick="vetRank()" disabled style="background:linear-gradient(135deg,var(--info),#2b7fc4)">⚖ Vet &amp; Rank surviving leads</button>
+      <button class="ghost small" id="rankedCsvBtn" onclick="exportRanked()" disabled style="width:100%;margin-top:8px">⬇ Export ranked CSV (all leads + AL columns)</button>
+      <label style="margin-top:14px">AfterLife category <span class="muted">(what these publish AS — must exactly match a marketplace category, or they'll never show)</span></label>
+      <select id="pubCategory" onchange="pubCategoryTouched=true;updateSelCount()" style="width:100%;margin-top:4px"></select>
+      <div id="pubCatHint" class="muted" style="font-size:11.5px;margin-top:4px">Set your request above and this auto-fills.</div>
+      <div id="selCount" class="muted" style="font-size:12px;margin-top:10px">Nothing is pre-selected. After Vet &amp; Rank, tick the suppliers you want in the ✓ column — the count you pick shows here.</div>
+      <button class="ghost small" id="publishBtn" onclick="publishAfterLife()" disabled style="width:100%;margin-top:8px">▲ Publish selected to AfterLife</button>
+    </div>
+  </aside>
+  <section class="work">
+    <div class="stat">
+      <div class="pill b"><b id="sDistricts">0</b><span>districts</span></div>
+      <div class="pill"><b id="sRaw">0</b><span>raw results</span></div>
+      <div class="pill g"><b id="sKept">0</b><span>kept leads</span></div>
+      <div class="pill r" style="cursor:pointer" onclick="showDropped()" title="Click to see what was excluded and why"><b id="sExcl">0</b><span>excluded ⓘ</span></div>
+      <div class="pill y"><b id="sEnriched">0</b><span>enriched</span></div>
+    </div>
+    <div class="prog"><i id="bar"></i></div>
+    <div id="regionPanel" style="display:none"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input type="text" id="findName" placeholder="Missing a supplier? Type its name to find out why…" style="flex:1">
+      <button class="ghost small" onclick="findLead(document.getElementById('findName').value)">Why isn't it here?</button>
+    </div>
+    <div id="log">Ready. Set your keys in Settings, pick an area + category, and run.</div>
+    <div id="results"><div class="empty"><b>No sweep run yet</b>Tile a postcode area to populate the lead grid.</div></div>
+  </section>
+</main>
+
+<div class="modal" id="settings">
+  <div class="mbox">
+    <h2>Settings & API keys</h2>
+    <p>Keys are held in this browser only and sent with each request. For production, set them once as Netlify environment variables (<b>GOOGLE_PLACES_KEY</b>, <b>CH_API_KEY</b>, <b>HUNTER_KEY</b>) — then these fields can stay empty.</p>
+    <label>Google Places API key <span id="kG" class="keyok"></span></label>
+    <input type="password" id="keyGoogle" placeholder="AIza…">
+    <label>Companies House API key (free — ownership & director names) <span id="kC" class="keyok"></span></label>
+    <input type="password" id="keyCH" placeholder="xxxxxxxx-xxxx-xxxx">
+    <label>Hunter.io API key (optional — email fallback) <span id="kH" class="keyok"></span></label>
+    <input type="password" id="keyHunter">
+    <label>Firecrawl API key (optional — deep JS-rendered email crawl, before Hunter) <span id="kFC" class="keyok"></span></label>
+    <input type="password" id="keyFirecrawl">
+    <label>Anthropic API key (optional — AI agent interprets any instruction you type) <span id="kA" class="keyok"></span></label>
+    <input type="password" id="keyAnthropic">
+    <label>FCA API key (financial categories — verifies IFA vs mortgage broker) <span id="kF" class="keyok"></span></label>
+    <input type="password" id="keyFCA">
+    <label>FCA registered email</label>
+    <input type="text" id="keyFCAEmail" placeholder="your FCA-registered email" value="">
+    <label>CQC API key (care categories — now REQUIRED for CQC; free at api-portal.service.cqc.org.uk) <span id="kQ" class="keyok"></span></label>
+    <input type="password" id="keyCQC">
+    <label>Charity Commission key (children's bereavement, pet rehoming) <span id="kR" class="keyok"></span></label>
+    <input type="password" id="keyCharity">
+    <label>Max result pages per district (each ≈ 20 results)</label>
+    <select id="maxPages"><option value="1">1 (fast)</option><option value="2" selected>2 (standard)</option><option value="3">3 (deep)</option></select>
+    <label style="margin-top:14px">Consolidator blocklist <span class="muted">(Vet &amp; Rank excludes these — one per line, optional <b>| domain.co.uk</b> to also match by website. Editable.)</span></label>
+    <textarea id="consolidators" style="min-height:150px;font-family:ui-monospace,monospace;font-size:13px"></textarea>
+    <label style="margin-top:14px">Confirmed-chain registry <span class="muted">(proven consolidator subsidiaries — hard-excluded even on cheap runs. Grows automatically when a deep run proves ownership. One <b>name | area | parent | evidence | date</b> per line. Editable.)</span></label>
+    <textarea id="confirmedChains" style="min-height:120px;font-family:ui-monospace,monospace;font-size:13px"></textarea>
+    <label style="margin-top:14px">Source router <span class="muted">(which directories each category sweeps, in priority order — trade-body/register first, then commercial dirs, then <b>google</b>. One <b>category: source, source…</b> per line. Wired now: saif, nafd, funeralguide, localfuneral, google. Others are configured for later.)</span></label>
+    <textarea id="sourcerouter" style="min-height:150px;font-family:ui-monospace,monospace;font-size:13px"></textarea>
+    <label style="margin-top:14px">County → areas <span class="muted">(for the region sweep — one <b>County: AREA, AREA…</b> per line. Editable.)</span></label>
+    <textarea id="counties" style="min-height:150px;font-family:ui-monospace,monospace;font-size:13px"></textarea>
+    <div class="mfoot">
+      <button class="ghost" onclick="document.getElementById('settings').classList.remove('open')">Close</button>
+      <button class="primary" style="width:auto" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- district intelligence: best-effort live ranges per area (editable in UI) ---------- */
+const DISTRICT_HINTS={AB:[1,25],AL:[1,10],B:[1,50,60,80,90,98],BA:[1,22],BB:[1,12],BD:[1,24],BH:[1,25],BL:[1,9],BN:[1,27,41,45],BR:[1,8],BS:[1,49],CA:[1,28],CB:[1,25],CF:[1,48,61,64,71,72,81,83],CH:[1,8,25,34,41,49,60,66],CM:[1,24,77,77],CO:[1,16],CR:[1,9],CT:[1,21],CV:[1,13,21,23,31,37,47,47],CW:[1,12],DA:[1,18],DD:[1,11],DE:[1,15,21,24,45,45,55,56,65,75],DG:[1,16],DH:[1,9],DL:[1,17],DN:[1,22,31,41],DT:[1,11],DY:[1,14],E:[1,20],EC:[1,4],EH:[1,55],EN:[1,11],EX:[1,24,31,39],FK:[1,21],FY:[1,8],G:[1,15,20,46,51,53,60,84],GL:[1,20,50,56],GU:[1,35,46,52],HA:[1,9],HD:[1,9],HG:[1,5],HP:[1,27],HR:[1,9],HU:[1,20],HX:[1,7],IG:[1,11],IP:[1,33],KT:[1,24],KY:[1,16],L:[1,40,60,80],LA:[1,23],LD:[1,8],LE:[1,19,65,67],LL:[11,78],LN:[1,13],LS:[1,29],LU:[1,7],M:[1,9,11,35,38,46,50,50,60,60,90,90],ME:[1,20],MK:[1,19,40,46,77,77],ML:[1,12],N:[1,22],NE:[1,49,61,71,82,88,98],NG:[1,25,31,34,70,90],NN:[1,18,29,29],NP:[4,26,44,44],NR:[1,35],NW:[1,11],OL:[1,16],OX:[1,18,25,29,33,39,44,49],PA:[1,38],PE:[1,38],PH:[1,26],PL:[1,35],PO:[1,22,30,41],PR:[1,9,25,26],RG:[1,31,40,45],RH:[1,20],RM:[1,20],S:[1,26,32,36,40,45,60,75,80,81],SA:[1,48,61,73,99,99],SE:[1,28],SG:[1,19],SK:[1,17,22,23],SL:[1,9],SM:[1,7],SN:[1,16,25,26,38,38],SO:[14,53],SP:[1,11],SR:[1,9],SS:[0,17],ST:[1,21],SW:[1,20],SY:[1,25],TA:[1,24],TD:[1,15],TF:[1,13],TN:[1,40],TQ:[1,14],TR:[1,27],TS:[1,29],TW:[1,20],UB:[1,11],W:[1,14],WA:[1,16],WC:[1,2],WD:[3,25],WF:[1,17],WN:[1,8],WR:[1,15],WS:[1,15],WV:[1,16],YO:[1,32,41,43,51,62]};
+function expandHints(arr){const out=[];for(let i=0;i<arr.length;i+=2){for(let n=arr[i];n<=arr[i+1];n++)out.push(n);}return [...new Set(out)];}
+// parse the postcode-area box into a clean list of areas (accepts "CO", "CO, CM", "CO CM SS", "CO1 CM2")
+function areaListFromBox(){
+  return [...new Set((document.getElementById('area').value||'').toUpperCase().split(/[,\s]+/).map(s=>(s.match(/^[A-Z]{1,2}/)||[''])[0]).filter(Boolean))];
+}
+function suggestDistricts(){
+  const areas=areaListFromBox();
+  if(areas.length>1){
+    // several areas typed → this is a region sweep; mirror into the region box, districts are generated per-area
+    document.getElementById('regionAreas').value=areas.join(', ');
+    document.getElementById('districts').value='(region sweep — districts auto-generated per area: '+areas.join(', ')+')';
+    return;
+  }
+  const a=areas[0];
+  if(!a){document.getElementById('districts').value='';return;}
+  document.getElementById('regionAreas').value='';
+  const hint=DISTRICT_HINTS[a];
+  const nums=hint?expandHints(hint):Array.from({length:25},(_,i)=>i+1);
+  document.getElementById('districts').value=nums.map(n=>a+n).join(', ');
+  const towns={CO:'Colchester',B:'Birmingham',SE:'London',M:'Manchester',S:'Sheffield',NG:'Nottingham',NE:'Newcastle',L:'Liverpool',LS:'Leeds',BS:'Bristol',CM:'Chelmsford',IP:'Ipswich'};
+  if(towns[a])document.getElementById('town').value=towns[a];
+}
+
+/* ---------- settings ---------- */
+function openSettings(){
+  ['Google','CH','Hunter','Firecrawl','Anthropic','FCA','FCAEmail','CQC','Charity'].forEach(k=>{const el=document.getElementById('key'+k);if(el&&localStorage.getItem('pp_'+k))el.value=localStorage.getItem('pp_'+k);});
+  const con=document.getElementById('consolidators');if(con)con.value=getConsolidators();
+  {const cc=document.getElementById('confirmedChains');if(cc)cc.value=getConfirmedChains();}
+  const sr=document.getElementById('sourcerouter');if(sr)sr.value=getSourceRouter();
+  const co=document.getElementById('counties');if(co)co.value=getCounties();
+  document.getElementById('settings').classList.add('open'); markKeys();
+}
+function saveSettings(){
+  ['Google','CH','Hunter','Firecrawl','Anthropic','FCA','FCAEmail','CQC','Charity'].forEach(k=>{const el=document.getElementById('key'+k);if(!el)return;const v=el.value.replace(/[^\x21-\x7E]/g,'').trim();if(v)localStorage.setItem('pp_'+k,v);else localStorage.removeItem('pp_'+k);});
+  const con=document.getElementById('consolidators');
+  if(con){const v=con.value.trim();if(v&&v!==DEFAULT_CONSOLIDATORS)localStorage.setItem('pp_Consolidators',v);else localStorage.removeItem('pp_Consolidators');}
+  {const cc=document.getElementById('confirmedChains');if(cc){const v=cc.value.trim();if(v&&v!==DEFAULT_CONFIRMED_CHAINS)localStorage.setItem('pp_ConfirmedChains',v);else localStorage.removeItem('pp_ConfirmedChains');}}
+  const sr=document.getElementById('sourcerouter');
+  if(sr){const v=sr.value.trim();if(v&&v!==DEFAULT_SOURCE_ROUTER)localStorage.setItem('pp_Sources',v);else localStorage.removeItem('pp_Sources');}
+  const co=document.getElementById('counties');
+  if(co){const v=co.value.trim();if(v&&v!==DEFAULT_COUNTIES)localStorage.setItem('pp_Counties',v);else localStorage.removeItem('pp_Counties');}
+  populateCounties();
+  document.getElementById('settings').classList.remove('open'); markKeys(); log('Keys saved locally.','ok');
+}
+function markKeys(){
+  document.getElementById('kG').textContent=localStorage.getItem('pp_Google')?'✓ set':'';
+  document.getElementById('kC').textContent=localStorage.getItem('pp_CH')?'✓ set':'';
+  document.getElementById('kH').textContent=localStorage.getItem('pp_Hunter')?'✓ set':'';
+  {const e=document.getElementById('kFC');if(e)e.textContent=localStorage.getItem('pp_Firecrawl')?'✓ set':'';}
+  document.getElementById('kA').textContent=localStorage.getItem('pp_Anthropic')?'✓ set':'';
+  const kf=document.getElementById('kF');if(kf)kf.textContent=localStorage.getItem('pp_FCA')?'✓ set':'';
+}
+
+/* ---------- built-in chain list (applied only when "Omit chains" is ticked) ---------- */
+const CHAINS=['co-op','coop','co-operative','cooperative','dignity','simplicity cremation','w h scott','wh scott','funeral partners','westerleigh','memoria','pure cremation','farewill','central co-op','east of england co-op','southern co-op','midcounties','francis chappell','j h kenyon','jh kenyon'];
+// UK funeral-PLAN providers. Being an "appointed representative of" one of these is REQUIRED since 2022
+// to sell regulated plans and is NEUTRAL for independence — GLOBAL rule, every sweep/area/category.
+// (Kept in sync with enrich.js PLAN_PROVIDERS_RE and vetrank.js FUNERAL_PLAN_PROVIDERS.)
+const PLAN_PROVIDERS_FE=/golden charter|golden leaves|ecclesiastical|pride planning|safe ?hands|\bavalon\b|one ?life|open prepaid|perfect choice|sovereign|distinct funeral plans|shepherds friendly|corinthian|age co|co-?op(?:erative)? funeral plan|dignity (?:funeral )?plan|central england co-?op/i;
+/* ---------- consolidator blocklist for Vet & Rank (editable in Settings) ---------- */
+const DEFAULT_CONSOLIDATORS=`St. James's Place | sjp.co.uk
+Amber River
+Knights Group
+Fairstone
+Perspective Financial
+Kingswood
+Quilter
+True Potential
+Openwork
+NFU Mutual
+Dignity
+Co-op Funeralcare
+Funeral Partners
+Memoria
+Westerleigh
+Irwin Mitchell
+Slater & Gordon
+Simplify
+Bupa
+HC-One
+Four Seasons`;
+function getConsolidators(){return localStorage.getItem('pp_Consolidators')||DEFAULT_CONSOLIDATORS;}
+function parseConsolidators(){
+  return getConsolidators().split('\n').map(line=>{
+    const [name,domain]=line.split('|').map(s=>s.trim());
+    return {name:name||'',domain:(domain||'').replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/.*$/,'').toLowerCase()};
+  }).filter(b=>b.name||b.domain);
+}
+/* ---------- CHAIN identity: a domain (website OR email) that belongs to a national chain/consolidator.
+   A row on one of these is a CHAIN branch — excluded up front (Stage 1) so it can never merge into an
+   independent. Funeral-plan providers (Golden Charter etc.) are NOT here — plan-AR stays neutral. ---------- */
+// EVERY known domain for each consolidator (they each use several). The explicit set is a backstop; the
+// real work is done by CHAIN_DOMAIN_RE, which matches a consolidator brand at the START of any domain
+// label (so dignityfunerals.co.uk, dignityuk.co.uk, dignitymemorial.com, dignitycaring.co.uk … ALL hit
+// via the single "dignity" fragment, not one hard-coded domain at a time).
+const CHAIN_EXTRA_DOMAINS=['funeralpartners.co.uk','dignityfunerals.co.uk','dignityuk.co.uk','dignitymemorial.com','dignityplc.co.uk','dignitycaring.co.uk','cpjfield.co.uk','memoria.co.uk','coop.co.uk','co-operative.coop','co-operativefuneralcare.co.uk','coopfuneralcare.co.uk','funeralcare.co.uk','westerleighgroup.co.uk','purecremation.co.uk','farewill.com','fenixfuneral.co.uk','thecmg.co.uk'];
+// Brand fragments that, at a domain-label boundary, unambiguously mean a national chain/consolidator.
+// NOTE: "memoria" is deliberately NOT here (it would false-match "memorial…"); Memoria is caught by the
+// exact domain instead. Same care for any generic word.
+const CHAIN_DOMAIN_RE=/(?:^|\.)(?:dignity|funeralpartners|cpjfield|westerleigh|purecremation|pure-cremation|farewill|fenixfuneral|simplicitycremations?|coopfunerals?|cooperativefuneral|co-operativefuneral)/i;
+function chainDomainSet(){const s=new Set(CHAIN_EXTRA_DOMAINS);parseConsolidators().forEach(c=>{if(c.domain)s.add(c.domain);});return s;}
+function isChainDomain(d,set){if(!d)return false;d=String(d).toLowerCase().replace(/^www\./,'');if(CHAIN_DOMAIN_RE.test(d))return true;if(d==='coop.co.uk'||d==='co-operative.coop'||d==='memoria.co.uk')return true;return (set||chainDomainSet()).has(d);}
+/* ---------- CHAIN NAME matching (BUG-3 fix) — WORD-BOUNDARY patterns against the ORIGINAL name, never a
+   substring against the punctuation-stripped name (which made "coop" hit Cooper, "memoria" hit Memorial,
+   "saif" hit any strapline). A bare token shorter than 5 chars is NEVER allowed to match. A name match only
+   ever FLAGS "suspected chain" — it never deletes; deletion needs hard evidence (domain/PSC/disclosure). */
+const TRADE_BODY_RE=/^(saif|nafd|naftd|humanists?(uk)?|goodfuneral\w*|naturaldeath\w*|feset|apct|ipw|sww|namm|solla|unbiased|vouchedfor|rics|step)$/i;
+const CHAIN_NAME_PATTERNS=[
+  {re:/\bco-?operative\b|\bco-?op\b/i, label:'Co-op'},
+  {re:/\bdignity\b/i, label:'Dignity'},
+  {re:/\bfuneral\s+partners\b/i, label:'Funeral Partners'},
+  {re:/\bwesterleigh\b/i, label:'Westerleigh'},
+  {re:/\bmemoria\b/i, label:'Memoria'},            // \b after "memoria" fails before the "l" of "memorial" — safe
+  {re:/\bpure\s+cremation\b/i, label:'Pure Cremation'},
+  {re:/\bsimplicity\b/i, label:'Simplicity'},
+  {re:/\bfarewill\b/i, label:'Farewill'},
+  {re:/\bfrancis\s+chappell\b/i, label:'Francis Chappell'},
+  {re:/\bcpj\s*field\b/i, label:'CPJ Field'},
+  {re:/\bj\.?\s*h\.?\s*kenyon\b/i, label:'J H Kenyon'}
+];
+const _escRe=s=>String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+// Build the flag-patterns once per sweep: curated set + anchored \b…\b patterns for any consolidator/user
+// name ≥5 alphanumerics that isn't already covered. Trade bodies are excluded outright.
+function buildNamePatterns(userExclusions){
+  const pats=CHAIN_NAME_PATTERNS.slice(); const seen=new Set(pats.map(p=>p.label.toLowerCase()));
+  const add=name=>{name=(name||'').trim(); if(!name)return; const key=name.toLowerCase();
+    if(seen.has(key))return; if(TRADE_BODY_RE.test(normTxt(name)))return;
+    if(name.replace(/[^a-z0-9]/gi,'').length<5)return;                 // no bare token <5 chars
+    seen.add(key); pats.push({re:new RegExp('\\b'+_escRe(name).replace(/\s+/g,'\\s+')+'\\b','i'), label:name}); };
+  parseConsolidators().forEach(c=>{if(c.name)add(c.name);});
+  (userExclusions||[]).forEach(add);
+  return pats;
+}
+function nameChainHit(name,pats){for(const p of (pats||CHAIN_NAME_PATTERNS))if(p.re.test(name||''))return p.label;return null;}
+// EXACT CANONICAL BRAND (fix B) — the FULL, unambiguous trading name of a consolidator. This IS a
+// high-confidence identity match, so it HARD-EXCLUDES on its own. It requires the whole brand phrase
+// ("co-op funeralcare", "dignity funerals"), so a token buried in an independent's name ("Cooper & Sons",
+// "Smith Memorials") does NOT match — only nameChainHit's weaker token patterns flag those.
+const CANONICAL_BRANDS=[
+  {re:/\bco-?op(?:erative)?\s+funeral\s?care\b/i, label:'Co-op Funeralcare'},
+  {re:/\bthe\s+co-?operative\s+funeral(?:\s?care)?\b/i, label:'The Co-operative Funeralcare'},
+  {re:/\b(?:east of england|central england|midcounties|southern|scotmid|lincolnshire|heart of england)\s+co-?op(?:erative)?\b/i, label:'Regional Co-op'},
+  {re:/\bco-?op(?:erative)?\s+funeral\s+service/i, label:'Co-op Funeral Service'},
+  {re:/\bdignity\s+funerals?\b/i, label:'Dignity Funerals'},
+  {re:/\bfuneral\s+partners\b/i, label:'Funeral Partners'},
+  {re:/\bpure\s+cremation\b/i, label:'Pure Cremation'},
+  {re:/\bcpj\s*field\b/i, label:'CPJ Field'}
+];
+function canonicalBrandHit(name){for(const b of CANONICAL_BRANDS)if(b.re.test(name||''))return b.label;return null;}
+// SAIF / NAFD-independent provenance = independent by definition (Dignity & Co-op can't be SAIF members).
+function isTradeBodyIndependent(l){
+  const s=[...(l.sources||[]),...String(l.memberships||'').split(/[,;]/),...String(l.register||'').split(/[,;]/)].map(x=>String(x).toLowerCase());
+  return s.some(x=>/\bsaif\b|independent funeral/i.test(x));
+}
+/* ---------- CONFIRMED-CHAIN REGISTRY — proven consolidator subsidiaries, so evidence established once (by a
+   deep/metered run, the ELG register work, or Companies House) is inherited by every future CHEAP run.
+   Format per line: name | area(optional) | parent | evidence | date. A match is a HIGH-CONFIDENCE identity
+   source → hard exclude on its own, even with metered enrichment OFF. Editable in Settings; grows itself. */
+const DEFAULT_CONFIRMED_CHAINS=`Titford | | Dignity | NAFD page links dignityfunerals.co.uk (ELG register) | 2026-07-16
+Francis Chappell | | Dignity | Dignity brand | 2026-07-16
+W H Scott | | Dignity | Dignity brand | 2026-07-16
+J H Kenyon | | Dignity | Dignity brand | 2026-07-16
+Kenyon | | Dignity | Dignity brand | 2026-07-16
+W H Shephard | CO | East of England Co-op | Co-op's own store listing (Flickr/cylex/Gazette), 93-94 High St Colchester | 2026-07-16
+Brown Fenn and Parker | | Dignity | dignityfunerals.co.uk (register) | 2026-07-16`;
+function getConfirmedChains(){return localStorage.getItem('pp_ConfirmedChains')||DEFAULT_CONFIRMED_CHAINS;}
+function parseConfirmedChains(){return getConfirmedChains().split('\n').map(l=>{const [name,area,parent,evidence,date]=l.split('|').map(s=>(s||'').trim());return {name,nk:nameKey(name||''),area:(area||'').toUpperCase(),parent,evidence,date};}).filter(e=>e.name&&e.nk.length>=4);}
+function confirmedChainHit(l){
+  const nk=nameKey(l.name||''); if(nk.length<4)return null; const area=(l.area||'').toUpperCase();
+  for(const e of parseConfirmedChains()){
+    if(e.area&&area&&e.area!==area)continue;
+    if(nk===e.nk || nk.startsWith(e.nk) || (e.nk.length>=6&&e.nk.startsWith(nk)&&nk.length>=6)) return e;
+  }
+  return null;
+}
+function addConfirmedChain(name,area,parent,evidence){
+  const nk=nameKey(name||''); if(nk.length<4)return false;
+  const cur=parseConfirmedChains();
+  if(cur.some(e=>e.nk===nk&&(!e.area||e.area===(area||'').toUpperCase())))return false;   // already known
+  const line=`${name} | ${area||''} | ${parent||'group'} | ${evidence||'hard evidence'} | ${(window.__today||'2026-07-16')}`;
+  localStorage.setItem('pp_ConfirmedChains',getConfirmedChains().replace(/\s*$/,'')+'\n'+line);
+  return true;
+}
+const emDom=e=>((String(e).split('@')[1])||'').toLowerCase();
+/* ---------- FOREIGN (non-UK) rejection: a row with no UK postcode, or a foreign country / US-state /
+   Canadian-province marker in its address, is not a UK firm — rejected before it enters the pool. ---------- */
+const UK_PC_RE=/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i;
+const FOREIGN_RE=/\b(?:USA|U\.?S\.?A|United States|Canada|Ontario|Quebec|Manitoba|Saskatchewan|Alberta|British Columbia|Australia|New Zealand|Oregon|Illinois|California|Texas|Florida|Nevada|Arizona|Colorado|Michigan|Ohio|Georgia|Virginia|Massachusetts|Pennsylvania|Missouri|Indiana|Tennessee|Wisconsin|Minnesota|Utah|Iowa|Kansas|Kentucky|Oklahoma|Connecticut|Nebraska|Idaho|Maryland|New Jersey|New York|North Carolina|South Carolina|Washington DC|Portland,? Or|Salem,? Or)\b/i;
+function isUKAddress(addr,pc){const s=((pc||'')+' '+(addr||''));if(!UK_PC_RE.test(s))return false;if(FOREIGN_RE.test(addr||''))return false;return true;}
+/* ---------- SOURCE ROUTER (editable per-category source list, like the blocklist) ---------- */
+const DEFAULT_SOURCE_ROUTER=`funeral: saif, nafd, funeralguide, localfuneral, google
+ifa: vouchedfor, google
+solicitor: google
+care: cqc, google
+surveyor: rics, google
+florist: google
+celebrant: google
+caterer: google
+default: google`;
+// sources with a server-side fetcher wired today (others log a reason and fall back gracefully)
+const WIRED_SOURCES=['saif','nafd','funeralguide','localfuneral','cqc','vouchedfor','rics','google'];
+/* ---------- county → postcode-areas mapping for the region sweep (editable in Settings) ---------- */
+// COMPLETE England & Wales coverage — all 104 postcode areas appear in at least one county below
+// (some areas straddle counties, so they intentionally appear in more than one). Editable in Settings.
+const DEFAULT_COUNTIES=`Essex: CO, CM, SS, IG, RM
+Greater London: E, EC, N, NW, SE, SW, W, WC, BR, CR, EN, HA, KT, SM, TW, UB
+Kent: CT, ME, DA, TN, BR
+Sussex: BN, RH, TN
+Hertfordshire: AL, SG, WD, EN, HP
+Bedfordshire: LU, MK, SG
+Surrey: GU, KT, CR, SM, RH
+Suffolk: IP
+Norfolk: NR
+Cambridgeshire: CB, PE
+Hampshire: SO, PO, GU, RG
+Berkshire: RG, SL
+Oxfordshire: OX
+Buckinghamshire: HP, MK, SL
+West Midlands: B, CV, DY, WS, WV
+Staffordshire: ST, WS, WV
+Shropshire: TF, SY
+Herefordshire & Worcestershire: HR, WR
+Greater Manchester: M, BL, OL, SK, WA, WN
+Merseyside: L, CH, PR
+Lancashire: BB, PR, FY, LA, BL
+Cumbria: CA, LA
+Cheshire: CH, CW, SK, WA
+West Yorkshire: LS, BD, HD, HX, WF
+South Yorkshire: S, DN
+North Yorkshire & Teesside: YO, HG, DL, TS
+East Yorkshire: HU
+Tyne and Wear: NE, SR, DH
+County Durham: DH, DL
+East Midlands: DE, LE, LN, NG, NN
+Lincolnshire: LN, DN
+Bristol & Somerset: BS, BA, TA
+Wiltshire: SN, SP
+Gloucestershire: GL
+Dorset: BH, DT
+Devon: EX, PL, TQ
+Cornwall: TR, PL
+South Wales: CF, NP, SA
+Mid Wales: LD, SY
+North Wales: LL`;
+function getCounties(){return localStorage.getItem('pp_Counties')||DEFAULT_COUNTIES;}
+function parseCounties(){
+  const map={};
+  getCounties().split('\n').forEach(line=>{
+    const i=line.indexOf(':');if(i<0)return;
+    const name=line.slice(0,i).trim();
+    const areas=line.slice(i+1).split(',').map(s=>s.trim().toUpperCase()).filter(s=>/^[A-Z]{1,2}$/.test(s));
+    if(name&&areas.length)map[name]=[...new Set(areas)];
+  });
+  return map;
+}
+function populateCounties(){
+  const sel=$('county');if(!sel)return;
+  const m=parseCounties();
+  sel.innerHTML='<option value="">— county / region —</option>'+Object.keys(m).map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n} (${m[n].join(', ')})</option>`).join('');
+}
+function onCountyPick(){const c=$('county').value;if(!c)return;const m=parseCounties();if(m[c])$('regionAreas').value=m[c].join(', ');}
+function getSelectedAreas(){
+  return [...new Set(($('regionAreas').value||'').split(/[,\s]+/).map(s=>s.trim().toUpperCase()).filter(s=>/^[A-Z]{1,2}$/.test(s)))];
+}
+function getSourceRouter(){return localStorage.getItem('pp_Sources')||DEFAULT_SOURCE_ROUTER;}
+function parseSourceRouter(){
+  const map={};
+  getSourceRouter().split('\n').forEach(line=>{
+    const i=line.indexOf(':');if(i<0)return;
+    const cat=line.slice(0,i).trim().toLowerCase();
+    const list=line.slice(i+1).split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+    if(cat&&list.length)map[cat]=list;
+  });
+  return map;
+}
+// map a free-text request to a category key used by the router
+function detectCategory(term){
+  const t=(term||'').toLowerCase();
+  if(/funeral|undertaker|cremation/.test(t))return 'funeral';
+  if(/\bifas?\b|financial advis|wealth manage|pension advis|estate planning|later[- ]life|equity release/.test(t))return 'ifa';
+  if(/solicitor|probate|conveyanc|lawyer|legal|will writer|will writing/.test(t))return 'solicitor';
+  if(/care home|home care|domiciliary|carer|nursing home|live[- ]?in care/.test(t))return 'care';
+  if(/surveyor|valuation|valuer|\brics\b|chartered survey/.test(t))return 'surveyor';
+  if(/floris|flower|bouquet/.test(t))return 'florist';
+  if(/celebrant/.test(t))return 'celebrant';
+  if(/cater|buffet|wake venue|function room/.test(t))return 'caterer';
+  return 'default';
+}
+// WRONG-CATEGORY guard (BUG: crematoria/cemeteries passing as funeral directors). A result must match the
+// REQUESTED trade, not an adjacent one. Each category lists names/types that mean a DIFFERENT trade, unless
+// the positive signal for THIS category is also present. Returns a reason string, or null if it's fine.
+const CATEGORY_NEGATIVES={
+  funeral:{neg:/\bcrematori|\bcemeter(y|ies)|\bburial ground|\bmemorial park|\bgarden of remembrance|\bnatural burial|\bwoodland burial|\bbereavement services\b|\bregister office|\bmortuary\b/i, negTypes:/cemetery|crematorium|place_of_worship|local_government_office|city_hall/i, pos:/funeral (director|home|service)|undertaker|funerals\b|funeralcare/i, label:'crematorium / cemetery / council service, not a funeral director'},
+  florist:{neg:/\bgarden centre|\bnursery\b|\bsupermarket|\bgarden centre/i, negTypes:/supermarket|grocery_or_supermarket|home_goods_store/i, pos:/floris|flower|bloom|bouquet/i, label:'garden centre / supermarket, not a florist'},
+  care:{neg:/\bhospital\b|\bpharmacy\b|\bgp surgery|\bdental/i, negTypes:/hospital|pharmacy|dentist|doctor/i, pos:/care|domiciliary|nursing|carers?\b|home care/i, label:'hospital / pharmacy, not a care provider'}
+};
+function wrongCategory(name,types,catKey){
+  const c=CATEGORY_NEGATIVES[catKey]; if(!c)return null;
+  const n=(name||'').toLowerCase();
+  // NAME-based only. Google place types are unreliable here — a real funeral director that runs a chapel /
+  // mausoleum (e.g. F A Albin & Sons) gets typed "cemetery", so type alone must NOT reject it. Require the
+  // NAME itself to say crematorium/cemetery/etc. and to carry no positive trade word.
+  return (c.neg.test(n)&&!c.pos.test(n))?c.label:null;
+}
+function pickSources(category){const m=parseSourceRouter();return m[category]||m['default']||['google'];}
+// Agent-chosen sources for a category with no explicit config. Cached per category (asked once).
+async function agentPickSources(label){
+  let cache={};try{cache=JSON.parse(localStorage.getItem('pp_SourceCache')||'{}');}catch(e){}
+  if(cache[label]&&cache[label].length)return {sources:cache[label],from:'agent-cache'};
+  if(MODE!=='functions')return {sources:['google'],from:'offline'};
+  try{
+    const r=await fetch('/.netlify/functions/sourcerouter',{method:'POST',body:JSON.stringify({category:label,anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+    const d=await r.json();
+    if(d&&d.ok&&Array.isArray(d.sources)&&d.sources.length){
+      cache[label]=d.sources;localStorage.setItem('pp_SourceCache',JSON.stringify(cache));
+      if(d.suggested&&d.suggested.length)log(`Source agent: for "${label}" also worth building — ${d.suggested.join(', ')}.`,'wn');
+      return {sources:d.sources,from:'agent',note:d.note};
+    }
+    return {sources:['google'],from:'agent-fallback',note:(d&&d.error)||''};
+  }catch(e){return {sources:['google'],from:'agent-error',note:e.message};}
+}
+const normTxt=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+// fuzzy "core name" for dedupe: strips legal/branch noise so "Daniel Robinson & Sons Ltd - Halstead",
+// "Daniel Robinson & Sons" and "Daniel Robinson and Sons" all collapse to the same key.
+const nameKey=s=>(s||'').toLowerCase().replace(/&/g,'and')
+  .replace(/\btrading\s+as\b.*$/,'').replace(/\bt\s*\/\s*a\b.*$/,'')  // drop a "Trading as …" / "t/a …" tail (West & Coe Trading as Harwich → West & Coe)
+  .replace(/\s+[-–—]\s+.*$/,'')          // drop a " - Halstead" / " – Braintree" branch/location suffix (SAIF/NAFD style)
+  .replace(/\s*\([^)]*\)\s*$/,'')          // drop a trailing "(Colchester)" branch tag
+  .replace(/\b(ltd|limited|llp|plc|the|co|company|funeral directors?|funerals?|funeralcare|services?|service|group|and|sons?|son)\b/g,'')
+  .replace(/[^a-z0-9]+/g,'').slice(0,14);
+/* ---------- natural-language request parser: "florists omit interflora, at least 50 reviews" ---------- */
+function parseRequest(raw){
+  let t=' '+raw.trim()+' ';
+  const out={omit:[],minRev:null,minRate:null,needWeb:false,needPhone:false};
+  let m=t.match(/(?:at least|min(?:imum)?(?: of)?|over|more than)\s+(\d+)\s+(?:reviews?|ratings?)/i);
+  if(m){out.minRev=+m[1];t=t.replace(m[0],' ');}
+  m=t.match(/(?:rating|rated|stars?)\s*(?:of|at least|above|over|min(?:imum)?)?\s*([0-5](?:\.\d)?)\s*(?:\+|stars?|or (?:more|above|higher))?/i);
+  if(m){out.minRate=parseFloat(m[1]);t=t.replace(m[0],' ');}
+  if(/(?:must have|with)\s+(?:a\s+)?website/i.test(t)){out.needWeb=true;t=t.replace(/(?:must have|with)\s+(?:a\s+)?website/i,' ');}
+  if(/(?:must have|with)\s+(?:a\s+)?(?:phone|telephone)(?:\s+number)?/i.test(t)){out.needPhone=true;t=t.replace(/(?:must have|with)\s+(?:a\s+)?(?:phone|telephone)(?:\s+number)?/i,' ');}
+  const omRe=/(?:omit(?:ting)?|exclud(?:e|ing)|without|avoid(?:ing)?|skip(?:ping)?|drop|ignore|not including|\bno\b)\s+([^.;\n]+)/gi;
+  let om;
+  while((om=omRe.exec(t))!==null){
+    om[1].split(/,| and | or |\//i).forEach(seg=>{
+      let s=seg.trim().toLowerCase()
+        .replace(/^(all|any|the)\s+/,'')
+        .replace(/\s+(branches?|listings?|companies|company|firms?|groups?|outlets?|stores?|shops?)$/,'')
+        .trim();
+      if(s&&s.length>1)out.omit.push(s);
+    });
+    t=t.replace(om[0],' ');
+  }
+  out.term=t.replace(/\s{2,}/g,' ').replace(/[,.;]\s*$/,'').trim();
+  return out;
+}
+/* ---------- engine ---------- */
+let LEADS=[],EXCLUDED=0,DROPPED=[],running=false;
+let regionCancel=false,REGION=null;   // multi-area (county/region) sweep state
+const $=id=>document.getElementById(id);
+function log(msg,cls){const l=$('log');const t=new Date().toTimeString().slice(0,8);l.innerHTML+=`\n<span class="${cls||''}">[${t}] ${msg}</span>`;l.scrollTop=l.scrollHeight;}
+function normPhone(p){return (p||'').replace(/[^0-9]/g,'').replace(/^44/,'0');}
+function setStats(){$('sKept').textContent=LEADS.length;$('sExcl').textContent=EXCLUDED;$('sEnriched').textContent=LEADS.filter(l=>l.enriched).length;
+  const has=LEADS.length>0;$('exportCsv').disabled=!has;$('exportXlsx').disabled=!has;
+  $('exportBrevo').disabled=!LEADS.some(l=>l.emails);$('enrichBtn').disabled=!has||running;
+  const vb=$('vetBtn');if(vb)vb.disabled=!has||running;
+  const vetted=LEADS.some(l=>l.alVerdict);
+  const rc=$('rankedCsvBtn');if(rc)rc.disabled=!vetted;
+  updateSelCount();}
+
+/* ---------- shared candidate POOL (single-area AND region sweeps use the same merge/dedupe) ---------- */
+// generic mailbox hosts — an email at one of these is NOT a firm identity (many firms share gmail)
+const GENERIC_MAIL=new Set(['gmail.com','googlemail.com','outlook.com','hotmail.com','hotmail.co.uk','yahoo.com','yahoo.co.uk','ymail.com','icloud.com','me.com','aol.com','live.com','live.co.uk','msn.com','btinternet.com','btconnect.com','sky.com','talktalk.net','virginmedia.com','mail.com','protonmail.com','gmx.com','tiscali.co.uk']);
+function domainOf(url){if(!url)return '';const m=String(url).trim().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').match(/^([a-z0-9.-]+)/);return m?m[1]:'';}
+// Identity of a firm WITHIN a postcode area: it is the SAME company if it shares a Companies House
+// number, a website domain, or an email domain — the STRONG signals the operator named. Name is NOT
+// a cross-branch key (different firms share names) — it only ever collapses the exact same branch
+// (same name + same postcode). Area-scoped so branches in different areas never merge.
+function chOf(o){return String(o.companyNo||o.companyNumber||'').replace(/\s/g,'').toUpperCase();}
+function emailDomOf(o){const em=(o.email||(o.emails||'').split(';')[0]||'').toLowerCase().trim();const d=(em.split('@')[1]||'').toLowerCase();return (d&&!GENERIC_MAIL.has(d))?d:'';}
+// obvious placeholder / template / infra / generic addresses that aren't a real firm contact
+const PLACEHOLDER_EMAIL=/@(example|sample|test|domain|yourdomain|mydomain|email|company|yourcompany|website|acme)\.(com|co\.uk|net|org)$|^(you|your|yourname|name|firstname|lastname|username|user|email|someone|test|everyone|anyone|nobody|hello123)@|@(sentry|wixpress|godaddy|cloudflare|schema\.org|2x)\b|noreply|no-reply|donotreply|placeholder|@2x|\.(png|jpe?g|gif|webp|svg)$/i;
+// the email's domain must end in a real TLD — kills text mis-parses like "here@p.g.oxley" / "x@a.r.clarke"
+const VALID_EMAIL_TLD=/\.(?:co|org|me|ltd|plc|net|sch|ac|gov|nhs)\.uk$|\.(?:com|net|org|uk|io|co|biz|info|email|dev|app|london|scot|wales|cymru|eu|ie|us|guru|agency)$/i;
+// ALL real, individual, non-placeholder email addresses on a record (o.emails may be "a@x; b@x; you@company.com")
+function emailsOf(o){
+  const raw=(o.emails!=null?String(o.emails):String(o.email||''));
+  return [...new Set(raw.split(/[;,\s]+/).map(s=>s.trim().toLowerCase())
+    .filter(s=>/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(s)&&!PLACEHOLDER_EMAIL.test(s)&&VALID_EMAIL_TLD.test((s.split('@')[1]||''))))];
+}
+// GLOBAL DEDUPE RULE (every sweep, every area, every category): merge two records into one ONLY when
+// they share a strong identity — an EXACT email ADDRESS (any one of them, if a record lists several),
+// website domain, or Companies House number. NEVER on name, address or phone. Records that share none
+// stay separate (an occasional dupe is acceptable; fusing two different firms is not). Area-scoped.
+function identityKeys(o,area){
+  const a=area||''; const ks=[];
+  const ch=chOf(o); if(ch)ks.push('c:'+ch+'|'+a);
+  const dom=domainOf(o.website); if(dom)ks.push('d:'+dom+'|'+a);
+  emailsOf(o).forEach(em=>ks.push('e:'+em+'|'+a));   // one key PER address — sharing ANY address merges
+  return ks;
+}
+// Two records that CANNOT be the same firm. A SHARED exact email is the strongest same-firm signal —
+// it overrides everything (a firm's website domain and its email domain can differ, e.g. westandcoe.com
+// vs @westcoe.co.uk). Otherwise, different website domains = different firms. A different Companies House
+// number is NOT a conflict on its own: a group (e.g. Hunnaball) runs several registered companies under
+// one website — same domain should still collapse to one sellable slot.
+function strongConflict(a,b){
+  const da=domainOf(a.website),db=domainOf(b.website);
+  if(da&&db){ if(da!==db)return true; return false; }   // different websites = different firms; SAME website = same operation (merge, even if CH differs — a group runs several companies on one site)
+  const ca=chOf(a),cb=chOf(b); if(ca&&cb&&ca!==cb)return true;  // no shared website + different Companies House numbers = different firms
+  return false;
+  // NOTE: a shared email no longer OVERRIDES a domain/CH conflict. Emails are never pooled across firms
+  // (Stage 3), so a shared address between two DIFFERENT-domain rows is contamination, not identity.
+}
+function makePool(){
+  const POOL=[],poolIx=new Map(); let rawCount=0, foreignCount=0;
+  const pcOf=s=>((s||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)||[''])[0];
+  const areaOfPC=pc=>{const m=(pc||'').toUpperCase().match(/^([A-Z]{1,2})\d/);return m?m[1]:'';};
+  function absorb(e,o){ // copy scalar fields into e, preferring e's existing content; keep the richest
+    if(!e.website&&o.website)e.website=o.website;
+    if(!e.email&&o.email)e.email=o.email;
+    if(!e.contact&&o.contact)e.contact=o.contact;
+    if(!e.phone&&o.phone)e.phone=o.phone;
+    if(!e.postcode&&o.postcode)e.postcode=o.postcode;
+    if(!e.address&&o.address)e.address=o.address;
+    if((o.reviews||0)>(e.reviews||0)){e.reviews=o.reviews;if(o.rating!=null)e.rating=o.rating;}
+    else if(e.rating==null&&o.rating!=null)e.rating=o.rating;
+    if(!e.status&&o.status)e.status=o.status;
+    if(!e.placeId&&o.placeId)e.placeId=o.placeId;
+    if((o.types||[]).length>(e.types||[]).length)e.types=o.types;
+  }
+  function addBranch(e,pcNorm,address,source,name){ if(!(pcNorm||address))return; const ex=e.branches.find(b=>b.postcode===pcNorm&&b.address===address); if(ex){if(source&&!(ex.sources||[]).includes(source))(ex.sources=ex.sources||[]).push(source);return;} e.branches.push({postcode:pcNorm,address:address,sources:source?[source]:[],name:name||e.name}); }
+  function foldEntry(e,other){ // two existing rows turned out to be the same firm → merge other INTO e
+    if(other===e)return;
+    absorb(e,other);
+    other.sources.forEach(s=>{if(!e.sources.includes(s))e.sources.push(s);});
+    other.areas.forEach(a=>e.areas.add(a)); other.pcs.forEach(p=>e.pcs.add(p));
+    other.memberships.forEach(m=>e.memberships.add(m)); (other.branches||[]).forEach(b=>addBranch(e,b.postcode,b.address,(b.sources||[])[0],b.name));
+    other._keys.forEach(k=>{e._keys.add(k);poolIx.set(k,e);});
+    const idx=POOL.indexOf(other); if(idx>=0)POOL.splice(idx,1);
+  }
+  function addToPool(c,source,sweptArea){
+    rawCount++;
+    const cand={name:c.name||'',address:c.address||'',postcode:(c.postcode||pcOf(c.address)).toUpperCase(),
+      phone:c.phone||'',website:c.website||'',email:(c.email||'').toLowerCase(),contact:c.contact||'',companyNo:c.companyNo||'',
+      rating:c.rating??null,reviews:c.reviews||0,types:c.types||[],status:c.status||'',placeId:c.placeId||''};
+    if(!cand.name)return;
+    // STAGE 4 — reject foreign (non-UK) rows BEFORE they enter the pool. An explicit foreign marker
+    // (country / US-state / Canadian-province) rejects any row; a MISSING UK postcode rejects a GOOGLE row
+    // (that's where US/Canada "…London…" funeral homes surface — a real UK Places result always carries its
+    // postcode). Directory rows (saif/nafd/…) are UK by nature, so a missing postcode there isn't foreign.
+    if(FOREIGN_RE.test(cand.address||'') || (source==='google' && !UK_PC_RE.test((cand.postcode||'')+' '+(cand.address||'')))){foreignCount++;return;}
+    const pcNorm=(cand.postcode||'').replace(/\s/g,'').toUpperCase();
+    const realArea=areaOfPC(cand.postcode)||(sweptArea||'').toUpperCase();
+    // ONE ROW PER COMPANY PER AREA. Cross-branch merge happens ONLY on strong ids — EXACT email,
+    // website domain, or Companies House number — scoped to the postcode area. NEVER on name, address
+    // or phone (that fused different firms). A record with none of these keys can't be matched, so it
+    // stays its own row (an occasional dupe is fine; a wrong merge is not). The conflict guard blocks
+    // merging records whose CH numbers or website domains differ.
+    const keys=identityKeys(cand,realArea);
+    const matched=[]; const seenE=new Set();
+    for(const k of keys){const e=poolIx.get(k); if(e&&!seenE.has(e)&&!strongConflict(e,cand)){seenE.add(e);matched.push(e);}}
+    let e;
+    if(!matched.length){
+      e={...cand,sources:[source],areas:new Set(),pcs:new Set(),memberships:new Set(),_keys:new Set(),branches:[]};
+      if(realArea)e.areas.add(realArea); if(sweptArea)e.areas.add((sweptArea||'').toUpperCase());
+      if(pcNorm)e.pcs.add(pcNorm); addBranch(e,pcNorm,cand.address,source,cand.name);
+      if(c.memberType)e.memberships.add(c.memberType);
+      POOL.push(e);
+    }else{
+      e=matched[0];
+      for(let i=1;i<matched.length;i++)if(!strongConflict(e,matched[i]))foldEntry(e,matched[i]); // same firm via different signals
+      if(!e.sources.includes(source))e.sources.push(source);
+      if(realArea)e.areas.add(realArea); if(sweptArea)e.areas.add((sweptArea||'').toUpperCase());
+      if(pcNorm)e.pcs.add(pcNorm); addBranch(e,pcNorm,cand.address,source,cand.name);
+      if(c.memberType)e.memberships.add(c.memberType);
+      absorb(e,cand);
+    }
+    keys.forEach(k=>{e._keys.add(k);poolIx.set(k,e);});
+  }
+  return {POOL,poolIx,addToPool,get rawCount(){return rawCount;},get foreignCount(){return foreignCount;}};
+}
+function districtsForArea(a){a=(a||'').toUpperCase();const hint=DISTRICT_HINTS[a];const nums=hint?expandHints(hint):Array.from({length:25},(_,i)=>i+1);return nums.map(n=>a+n);}
+
+/* ---------- prepare a sweep once: interpret request, parse rules, resolve sources ---------- */
+async function prepareSweep(){
+  const rawReq=$('term').value.trim().split('\n').join(' ');
+  let req=null;
+  if(MODE==='functions'){
+    try{
+      const ir=await fetch('/.netlify/functions/interpret',{method:'POST',body:JSON.stringify({request:rawReq,anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+      const id=await ir.json();
+      if(id&&id.ok&&id.search_term){
+        req={term:id.search_term,omit:(id.omit_names||[]).map(s=>String(s).toLowerCase()),minRev:id.min_reviews||null,minRate:id.min_rating||null,needWeb:!!id.must_have_website,needPhone:!!id.must_have_phone,
+             types:(id.relevant_place_types||[]).map(String),kw:(id.relevance_keywords||[]).map(s=>String(s).toLowerCase())};
+        log('AI AGENT ACTIVE — '+(id.note||'request interpreted'),'ok');
+      } else {log('AI AGENT NOT RUNNING'+(id&&id.error?' ('+id.error+')':' — no Anthropic key found. Add it in ⚙ Settings or as ANTHROPIC_API_KEY env var on Netlify.')+' Falling back to the basic parser.','er');}
+    }catch(e){log('AI AGENT NOT REACHABLE — '+e.message,'er');}
+  } else {log('AI agent needs the Netlify deployment (functions offline) — basic parser in use.','er');}
+  if(!req)req=parseRequest(rawReq);
+  const term=req.term;
+  if(!term){log('Need a request — type what supplier type to source.','er');return null;}
+  const userBlock=$('blocklist').value.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const negs=($('negKw').value||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+  const useChains=$('ruleChains').checked,mustOpen=$('ruleOpen').checked;
+  // BUG-2 FIX: the omit list = (a) exactly what the user typed + (b) the vetted config blocklist. The AI
+  // agent must NOT free-associate — its suggestions are only honoured if they intersect the vetted set,
+  // and a trade body (SAIF/NAFD/…) is NEVER an exclusion. Ignored suggestions are logged, not applied.
+  const vetted=new Set([...(useChains?CHAINS:[]),...parseConsolidators().map(c=>c.name)].map(normTxt).filter(Boolean));
+  const userExplicit=[...userBlock,...negs].map(normTxt).filter(Boolean);
+  const agentKept=(req.omit||[]).map(normTxt).filter(o=>o&&vetted.has(o));
+  const agentDropped=(req.omit||[]).filter(o=>o&&!vetted.has(normTxt(o)));
+  if(agentDropped.length)log(`Agent suggested omitting ${agentDropped.length} name(s) that are NOT on the vetted consolidator blocklist — IGNORED: ${agentDropped.join(', ')}. Only your typed exclusions + the config blocklist are applied.`,'wn');
+  const block=[...new Set([...vetted,...userExplicit,...agentKept])].filter(b=>b&&!TRADE_BODY_RE.test(b));
+  const uRev=+$('minRev').value||0, uRate=+$('minRate').value||0;
+  const minRev=uRev>0?uRev:0, minRate=uRate>0?uRate:0;
+  const needWeb=$('ruleWeb').checked, needPhone=$('rulePhone').checked, cap=+$('cap').value||0;
+  if(req.minRev&&!uRev)log(`Note: agent suggested min ${req.minRev} reviews — IGNORED (your setting is 0).`,'wn');
+  if(req.needWeb&&!needWeb)log('Note: agent suggested "must have website" — IGNORED (your rule is off).','wn');
+  log(`Interpreted request — search: "${term}"`+(req.omit.length?` · omitting: ${req.omit.join(', ')}`:'')+(minRev?` · min reviews ${minRev}`:'')+(minRate?` · min rating ${minRate}`:'')+(needWeb?' · must have website':'')+(needPhone?' · must have phone':''),'wn');
+  // source router (same across every area of a region)
+  const catKey=detectCategory(term+' '+rawReq), catLabel=(term||'').toLowerCase().trim(), cfg=parseSourceRouter();
+  let wantSources, routeVia;
+  if(MODE!=='functions'){wantSources=['google'];routeVia='offline';}
+  else if(catKey!=='default'&&cfg[catKey]){wantSources=cfg[catKey];routeVia='config:'+catKey;}
+  else if(cfg[catLabel]){wantSources=cfg[catLabel];routeVia='config:'+catLabel;}
+  else{const picked=await agentPickSources(catLabel);wantSources=picked.sources;routeVia=picked.from;}
+  const unwired=wantSources.filter(s=>!WIRED_SOURCES.includes(s));
+  log(`Category "${catLabel}" (${routeVia}) → sources: ${wantSources.join(' → ')}${unwired.length?` · not-yet-wired: ${unwired.join(', ')}`:''}`,'wn');
+  const namePatterns=buildNamePatterns([...userBlock,...negs]);
+  const ctx={rawReq,req,term,block,namePatterns,catKey,useChains,mustOpen,minRev,minRate,needWeb,needPhone,cap,wantSources,routeVia,catLabel};
+  window.__lastCtx=ctx;   // enrichAll's post-merge applyChainVerdicts reads the sweep's name patterns from here
+  return ctx;
+}
+
+/* ---------- gather ONE area's candidates into the shared pool (never throws past a source) ---------- */
+/* ---------- DATA SOURCE ROUTER: the "Data source" selector reroutes the primary search slot between
+   paid Google Places and the FREE sources (OpenStreetMap/Overpass + official registers via /freesearch,
+   or Companies House by SIC). Directory sources (SAIF/NAFD/…) still run either way — they're already free. */
+const FREE_REGISTER=[
+  {re:/home care|domiciliary|live[- ]?in care|care agency|carer|nursing home/i, src:'cqc', label:'CQC (free, official, complete)'},
+  {re:/caterer|catering|wake venue|function room|buffet|restaurant/i, src:'fsa', label:'FSA food register (free, official)'},
+  {re:/house clearance|estate clearance|probate clearance|waste|removal/i, src:'ea', label:'EA waste carriers (free, official)'}
+];
+function freeRegisterFor(term){for(const f of FREE_REGISTER)if(f.re.test(term))return f;return null;}
+async function callFree(source,term,district){
+  const r=await fetch('/.netlify/functions/freesearch',{method:'POST',body:JSON.stringify({source,request:term,district,cqcKey:localStorage.getItem('pp_CQC')||undefined})});
+  return await r.json();
+}
+// primary-slot results for ONE district, routed by the #source selector → array of {p, src}
+async function districtResults(term,d,town,townMode){
+  const mode=($('source')&&$('source').value)||'google';
+  const q=townMode?`${term} ${d}`:`${term} ${d}${town?' '+town:''}`;
+  const rows=[];
+  if(mode==='google'||mode==='both'){
+    const data=await searchDistrict(q,+($('maxPages').value||3));
+    if(data&&data.error&&mode==='google')return {error:data.error,rows};
+    ((data&&data.results)||[]).forEach(p=>rows.push({p,src:'google'}));
+  }
+  if(mode==='ch'){
+    const sic=($('sic').value||'').trim();
+    if(!sic)return {error:'Companies House source needs a SIC code in the Verify panel (e.g. 96030 = funerals).',rows};
+    const area=($('area').value||'').trim().toUpperCase().split(',')[0].trim();
+    window.__sicCache=window.__sicCache||{}; const ck=sic+'|'+area;
+    if(window.__sicCache[ck]===undefined){
+      const r=await fetch('/.netlify/functions/sicsearch',{method:'POST',body:JSON.stringify({sic,area,chKey:localStorage.getItem('pp_CH')||undefined,maxPages:3})});
+      const dd=await r.json(); window.__sicCache[ck]=dd.results||[];
+    }
+    window.__sicCache[ck].filter(c=>!d||c.district===d).forEach(c=>rows.push({src:'companieshouse',p:{placeId:'ch'+c.companyNumber,name:c.name,address:c.address,phone:'',website:'',rating:null,reviews:0,types:['registered_company'],status:'OPERATIONAL',companyNo:c.companyNumber}}));
+  }
+  if(mode==='osm'||mode==='auto'||mode==='both'){
+    const reg=(mode==='auto'||mode==='both')?freeRegisterFor(term):null;
+    const fsrc=reg?reg.src:'osm';
+    const f=await callFree(fsrc,term,d);
+    ((f&&f.results)||[]).forEach(p=>rows.push({p,src:fsrc}));
+    if(reg&&!window.__srcNoted){log('Using '+reg.label+' instead of paid Google search.','ok');window.__srcNoted=1;}
+  }
+  return {rows};
+}
+/* ---------- BATCH QUEUE: run a matrix of areas × categories unattended (resume · master CSV · webhook) ---------- */
+function allEWAreas(){const m=parseCounties();const s=new Set();Object.values(m).forEach(a=>a.forEach(x=>s.add((x||'').toUpperCase())));return [...s];}
+let BATCH={running:false,stop:false,master:[],done:(()=>{try{return JSON.parse(localStorage.getItem('pp_batch_done')||'[]');}catch(e){return[];}})(),jobs:[]};
+function batchJobs(){
+  const cats=$('batchCats').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const areaRaw=($('batchAreas').value||'').trim().toUpperCase();
+  const areas=(areaRaw==='ALL'||areaRaw==='')?allEWAreas():areaRaw.split(',').map(s=>s.trim()).filter(Boolean);
+  const jobs=[]; areas.forEach(a=>cats.forEach(c=>jobs.push({area:a,cat:c})));
+  return {jobs,cats,areas};
+}
+function estimateBatch(){
+  const {jobs,cats,areas}=batchJobs();
+  if(!jobs.length){log('Add at least one category line and one area.','er');return;}
+  let districts=0; areas.forEach(a=>{const h=DISTRICT_HINTS[a];districts+=h?expandHints(h).length:25;});
+  const pages=+$('batchPages').value||1, searches=districts*cats.length*pages;
+  const paid=($('source').value==='google'||$('source').value==='both');
+  const cost=paid?('£'+(searches*0.032).toFixed(0)):'£0 (free source selected)';
+  log(`BATCH ESTIMATE — ${areas.length} area(s) × ${cats.length} categor${cats.length===1?'y':'ies'} = ${jobs.length} jobs; ${districts.toLocaleString()} districts.`,'wn');
+  log(`  ≈ ${searches.toLocaleString()} searches ≈ ${cost}${paid?" (~3.2p each, before Google's free monthly allowance)":''}.`,paid?'wn':'ok');
+  if(paid)log('  Switch Data source to "FREE: auto" or "OpenStreetMap" to run this at £0 search cost.','wn');
+  log(`  Time: roughly ${Math.round(searches*0.4/60)} min of sweeping${$('batchEnrich').value==='1'?' + enrichment (~1s/lead)':''}.`,'wn');
+  if(BATCH.done.length)log(`  ${BATCH.done.length} job(s) already completed will be SKIPPED (resume).`,'wn');
+}
+function resetBatch(){BATCH.master=[];BATCH.done=[];try{localStorage.removeItem('pp_batch_done');}catch(e){}log('Batch progress reset — master set cleared, all jobs will re-run.','ok');}
+async function startBatch(){
+  if(BATCH.running){log('Batch already running.','er');return;}
+  if(MODE!=='functions'){log('Batch queue needs the Netlify deployment.','er');return;}
+  const {jobs}=batchJobs();
+  if(!jobs.length){log('Add at least one category line and one area.','er');return;}
+  BATCH.running=true;BATCH.stop=false;BATCH.jobs=jobs;BATCH.master=BATCH.master||[];
+  const wantEnrich=$('batchEnrich').value==='1', savedAuto=$('autoEnrich').checked;
+  $('autoEnrich').checked=false;   // batch drives enrich manually so it can AWAIT it (deterministic order)
+  log(`BATCH START — ${jobs.length} jobs (${BATCH.done.length} already done will skip). Keep this tab open; progress saved as you go.`,'ok');
+  const t0=Date.now();
+  for(let i=0;i<jobs.length;i++){
+    if(BATCH.stop){log(`Batch stopped after ${i} of ${jobs.length} jobs.`,'wn');break;}
+    const j=jobs[i], key=j.area+'|'+normTxt(j.cat);
+    if(BATCH.done.includes(key))continue;
+    log(`— JOB ${i+1}/${jobs.length}: ${j.area} · ${j.cat}`,'wn');
+    $('area').value=j.area; suggestDistricts(); $('term').value=j.cat; $('town').value=''; $('regionAreas').value=''; $('maxPages').value=$('batchPages').value;
+    try{
+      await runSearch();
+      if(wantEnrich&&LEADS.length){await enrichAll();}
+      const tagged=LEADS.map(l=>({...l,batchArea:j.area,batchCategory:j.cat}));
+      BATCH.master.push(...tagged); BATCH.done.push(key);
+      try{localStorage.setItem('pp_batch_done',JSON.stringify(BATCH.done.slice(-5000)));}catch(e){}
+      const hook=($('webhook').value||'').trim();
+      if(hook&&tagged.length){
+        try{await fetch(hook,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({area:j.area,category:j.cat,count:tagged.length,leads:tagged})});log(`  → posted ${tagged.length} leads to webhook.`,'ok');}
+        catch(e){log('  → webhook post failed: '+e.message,'er');}
+      }
+      log(`  ✓ ${j.area} · ${j.cat}: ${tagged.length} leads (master now ${BATCH.master.length}).`,'ok');
+    }catch(e){log(`  ✗ job failed — ${e.message}`,'er');}
+  }
+  $('autoEnrich').checked=savedAuto; BATCH.running=false;
+  const mins=Math.round((Date.now()-t0)/60000);
+  log(`BATCH COMPLETE — ${BATCH.done.length} total done, ${BATCH.master.length} leads in master, ${mins} min. Click "Export MASTER".`,'ok');
+}
+function exportMaster(){
+  if(!BATCH.master.length){log('Nothing in the master set yet — run a batch first (master is held in memory for this session).','er');return;}
+  const cols=['batchArea','batchCategory','area','district','name','aiType','regStatus','frn','independent','register','sources','contact','phone','emails','website','address','rating','reviews','companyNo','placeId'];
+  const esc=v=>`"${String(v==null?'':(Array.isArray(v)?v.join(' '):v)).replace(/"/g,'""')}"`;
+  const csv=[cols.join(','),...BATCH.master.map(r=>cols.map(c=>esc(c==='register'?(r.register||r.memberships):r[c])).join(','))].join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download=`prospector_MASTER_${BATCH.master.length}leads_${BATCH.done.length}jobs.csv`;a.click();
+  log(`Exported MASTER — ${BATCH.master.length} leads across ${BATCH.done.length} area/category jobs.`,'ok');
+}
+async function gatherArea(sweptArea,districts,tiles,town,townMode,ctx,pool){
+  const used=new Set();
+  const srcMode=($('source')&&$('source').value)||'google';
+  for(const source of ctx.wantSources){
+    if(regionCancel)break;
+    if(source==='google'){
+      let g=0;
+      for(let i=0;i<tiles.length;i++){
+        if(regionCancel)break;
+        const d=tiles[i];$('bar').style.width=Math.round(i/tiles.length*70)+'%';
+        try{
+          const data=await districtResults(ctx.term,d,town,townMode);
+          if(data.error){log(`${srcMode} ${d}: ${data.error}`,'er');if(srcMode==='ch')break;continue;}
+          data.rows.forEach(({p,src})=>pool.addToPool(p,src,sweptArea));g+=data.rows.length;
+          $('sRaw').textContent=pool.rawCount;
+        }catch(e){log(`${srcMode} ${d}: ${e.message}`,'er');}
+        await new Promise(r=>setTimeout(r,140));
+      }
+      used.add(srcMode);
+      log(`  ${srcMode==='google'?'google':srcMode==='ch'?'Companies House (SIC)':srcMode==='both'?'google + free':'free ('+srcMode+')'}: +${g} raw across ${tiles.length} centre(s)${sweptArea?' in '+sweptArea:''}.`,g?'ok':'wn');
+    } else if(MODE==='functions'){
+      try{
+        const r=await fetch('/.netlify/functions/sources',{method:'POST',body:JSON.stringify({source,area:sweptArea,town,districts,cqcKey:localStorage.getItem('pp_CQC')||undefined})});
+        const d=await r.json();
+        if(d.status==='not-implemented'){log(`  ${source}: not yet wired — skipped.`,'wn');}
+        else if(d.status==='not-a-lister'){log(`  ${source}: ${d.note||'not an area lister'} — skipped.`,'wn');}
+        else{
+          (d.results||[]).forEach(c=>pool.addToPool(c,source,sweptArea));
+          if(d.status==='blocked')log(`  ${source}: blocked / needs a key${sweptArea?' ('+sweptArea+')':''} — continuing. ${d.note||''}`,'wn');
+          else if(d.status==='error')log(`  ${source}: error — ${d.note||'unknown'} (continuing).`,'er');
+          else log(`  ${source}: +${d.count||0} candidate(s)${sweptArea?' in '+sweptArea:''}. ${d.note||''}`,d.count?'ok':'wn');
+          if(d.count)used.add(source);
+        }
+        $('sRaw').textContent=pool.rawCount;
+      }catch(e){log(`  ${source}: unreachable — ${e.message} (continuing).`,'er');}
+      await new Promise(r=>setTimeout(r,120));
+    }
+  }
+  return used;
+}
+
+/* ---------- distinct-company (sellable-slot) count per area ---------- */
+// After the merge, each kept LEAD is one distinct company in one area — so a per-area count of leads
+// IS the sellable-slot figure. Optionally drop EXCLUDE-verdict firms (chains/consolidators) for the
+// true post-vetting number.
+function reportSlots(label,opts){
+  opts=opts||{};
+  const rows=opts.excludeVerdict?LEADS.filter(l=>l.alVerdict!=='EXCLUDE'):LEADS;
+  const by={}; rows.forEach(l=>{const a=l.area||'?';by[a]=(by[a]||0)+1;});
+  const summary=Object.entries(by).sort((x,y)=>y[1]-x[1]).map(([a,n])=>`${a} ${n}`).join(' · ');
+  log(`${label}: ${summary||'0'} · total ${rows.length}.`,'ok');
+  return by;
+}
+/* ---------- post-enrich re-dedupe: collapse leads that enrichment revealed are the same company ----------
+   (same Companies House number / website domain / email domain / name, within one postcode area) ---------- */
+function mergeLead(a,b){
+  a.sources=[...new Set([...(a.sources||[]),...(b.sources||[])])];
+  a.memberships=[...new Set([...(a.memberships||'').split(', ').filter(Boolean),...(b.memberships||'').split(', ').filter(Boolean)])].join(', ');
+  a.register=a.memberships||a.register||'';
+  a.foundAreas=[...new Set([...(a.foundAreas||[]),...(b.foundAreas||[])])];
+  a.branches=[...(a.branches||[]),...(b.branches||[])];
+  a.branchPCs=[...new Set([...(a.branchPCs||[]),...(b.branchPCs||[])])];
+  a.branchCount=Math.max(a.branchCount||1,a.branchPCs.length); if(a.branchCount>1)a.branchDup=true;
+  if(!a.website&&b.website)a.website=b.website;
+  {const em=[...new Set([...emailsOf(a),...emailsOf(b)])]; if(em.length)a.emails=em.join('; ');}  // union all real emails
+  if(!a.contact&&b.contact)a.contact=b.contact;
+  if(!a.phone&&b.phone)a.phone=b.phone;
+  if(!a.companyNo&&b.companyNo)a.companyNo=b.companyNo;
+  if(!a.postcode&&b.postcode)a.postcode=b.postcode;
+  if(!a.address&&b.address)a.address=b.address;
+  if(b.siteText&&(!a.siteText||b.siteText.length>a.siteText.length))a.siteText=b.siteText;
+  if((b.reviews||0)>(a.reviews||0)){a.reviews=b.reviews;if(b.rating!=null)a.rating=b.rating;}
+  // register-supply provenance: two sources merging = "both"; carry SAIF flag + register ids through
+  {const sa=a.source||'discovery', sb=b.source||'discovery'; a.source=(sa===sb)?sa:'both';}
+  if(!a.saifMember&&b.saifMember)a.saifMember=b.saifMember;
+  if(!a.companyId&&b.companyId)a.companyId=b.companyId;
+  if(!a.registerVerified&&b.registerVerified)a.registerVerified=b.registerVerified;
+  if(b.tradingBrands&&b.tradingBrands.length)a.tradingBrands=[...new Set([...(a.tradingBrands||[]),...b.tradingBrands])];
+}
+/* ---------- STAGE 1 — remove CHAIN rows BEFORE any merge/propagation, so a chain branch can never be
+   fused into an independent and drag its email in. Also scrubs a STRAY chain email off an independent's
+   row (contamination), so it can't become a merge key. Run this immediately before every propagate+dedupe
+   pass (post-crawl, post-Firecrawl, post-Hunter). Golden Charter / funeral-plan AR stays NEUTRAL. ---------- */
+// DATA-CLEANING (runs before every dedupe): drop a STRAY chain-domain email from a row that also has its
+// OWN independent email — contamination that could otherwise fuse chain branches into an independent.
+// Does NOT delete rows and does NOT touch a row whose only email is a chain (that's a real chain branch,
+// judged later by applyChainVerdicts). Keeps chain branches poolable with each OTHER, never with independents.
+function scrubChainEmails(){
+  const set=chainDomainSet(); let cleaned=0;
+  for(const l of LEADS){
+    const emails=emailsOf(l);
+    const chainEmails=emails.filter(e=>isChainDomain(emDom(e),set));
+    const ownEmails=emails.filter(e=>!isChainDomain(emDom(e),set));
+    if(chainEmails.length&&ownEmails.length){l.emails=ownEmails.join('; ');cleaned++;}
+  }
+  return cleaned;
+}
+// BUG-3/4 FIX — ONE chain verdict per COMPANY, decided AFTER the merge, on aggregated evidence.
+//  • HARD evidence deletes: own website is a chain domain · every email is a chain domain (a chain branch) ·
+//    Companies House corporate PSC is a consolidator · the site's own "part of X" ownership disclosure.
+//  • A NAME match (word-boundary, vs the ORIGINAL name) only FLAGS l.suspectedChain — it NEVER deletes.
+//  • SAIF/NAFD-independent provenance is IMMUNE to name flags; hard evidence can still exclude a SAIF member
+//    but that's logged LOUDLY (it means a source is wrong). Evidence beats a name match every time.
+const HOST_PROVIDER_FE=/^(34sp|wix|squarespace|godaddy|hostinger|123-?reg|fasthosts|ionos|1and1|names|tsohost|krystal|heartinternet|siteground|bluehost|weebly|wordpress|automattic|cloudflare|mailchimp|shopify|createandhost|itseeze)\./i;
+// AUTO-DETECT GROUP DOMAINS (self-maintaining chain detection): a NON-generic, NON-host email/website
+// domain shared by ≥2 DISTINCT companies across ≥2 postcode areas is a group/consolidator we may never have
+// heard of (e.g. thecmg.co.uk). Returns [{domain,companies,areas}] for review + auto-exclusion of members.
+function detectGroupDomains(){
+  const map=new Map();  // domain -> {names:[nameKey], areas:Set}
+  LEADS.forEach(l=>{
+    const doms=new Set([domainOf(l.website),...emailsOf(l).map(e=>emDom(e))].filter(Boolean));
+    const area=(l.area||'').toUpperCase(), nk=nameKey(l.name);
+    doms.forEach(d=>{ if(!d||GENERIC_MAIL.has(d)||HOST_PROVIDER_FE.test(d)||isChainDomain(d))return;
+      if(!map.has(d))map.set(d,{names:[],areas:new Set()}); map.get(d).names.push(nk); map.get(d).areas.add(area); });
+  });
+  const groups=[];
+  map.forEach((v,d)=>{
+    // CRITICAL: one INDEPENDENT firm's own branches across areas share its domain (levertons.co.uk across
+    // Golders Green + Fortis Green) — that is NOT a consolidator. A real group (thecmg.co.uk) is shared by
+    // firms whose names DON'T derive from the domain. So count only members whose name doesn't contain the
+    // domain root (and vice-versa) — "genuinely different firms sharing one domain".
+    const root=d.split('.')[0].replace(/^(the|my)/,'').replace(/(funerals?|funeraldirectors?|group|holdings?|co|ltd)$/,'');
+    const r5=root.slice(0,5);
+    const distinct=[...new Set(v.names)].filter(Boolean);
+    const foreign=distinct.filter(nk=> r5.length>=3 ? (!nk.includes(r5) && !root.includes(nk.slice(0,5))) : true);
+    if(foreign.length>=2 && v.areas.size>=2) groups.push({domain:d,companies:foreign.length,areas:v.areas.size,members:foreign.slice(0,6)});
+  });
+  return groups.sort((a,b)=>b.companies-a.companies);
+}
+// A newly-detected group domain is a MERGE + REVIEW signal, NEVER an auto-delete. A MULTI-BRAND INDEPENDENT
+// (West & Coe running H L Hawes + A G Butler; Hunnaball) collapses to ONE commercial counterparty per area,
+// brands retained as trading names, and is KEPT. Only a domain the operator has PROMOTED to the consolidator
+// blocklist causes exclusion (handled by chain-domain/chain-email in applyChainVerdicts).
+function mergeGroupBrands(groupSet){
+  if(!groupSet||!groupSet.size)return 0;
+  const gd=l=>{const wd=domainOf(l.website);if(wd&&groupSet.has(wd))return wd;return emailsOf(l).map(e=>emDom(e)).find(d=>groupSet.has(d))||'';};
+  const byKey=new Map(); const removed=new Set(); let merged=0;
+  for(const l of LEADS){
+    if(removed.has(l))continue;
+    const d=gd(l); if(!d)continue;
+    const key=d+'|'+(l.area||'');
+    if(byKey.has(key)){const canon=byKey.get(key); if(canon!==l&&!strongConflict(canon,l)){mergeLead(canon,l);canon.multiBrand=true;canon.groupDomain=d;canon.brands=[...new Set([...(canon.brands||[canon.name]),l.name])];removed.add(l);merged++;}}
+    else byKey.set(key,l);
+  }
+  if(merged)LEADS=LEADS.filter(l=>!removed.has(l));
+  return merged;
+}
+// SECONDARY MERGE KEY (minor residual fix): same firm, two domains (West & Coe = westcoe.co.uk + westandcoe.com;
+// the stray Gwinnell row). Merge same-AREA rows whose nameKey matches (exact, or a ≥6-char prefix) so it no
+// longer depends on metered enrichment. Conservative: nameKey must be ≥6 chars (skips short/generic names)
+// and a differing Companies House number blocks it (genuinely different companies).
+function mergeByNameArea(){
+  const canons=[]; const removed=new Set(); let merged=0;
+  const rows=[...LEADS].sort((a,b)=>(b.website?1:0)-(a.website?1:0)||((b.branchCount||1)-(a.branchCount||1)));
+  for(const l of rows){
+    if(removed.has(l))continue;
+    const nk=nameKey(l.name), area=(l.area||'').toUpperCase();
+    if(nk.length<6){canons.push(l);continue;}
+    const canon=canons.find(c=>!removed.has(c)&&(c.area||'').toUpperCase()===area&&(nameKey(c.name)===nk||(nameKey(c.name).length>=6&&nk.startsWith(nameKey(c.name)))||(nk.length>=6&&nameKey(c.name).startsWith(nk)))&&!(chOf(c)&&chOf(l)&&chOf(c)!==chOf(l)));
+    if(canon){mergeLead(canon,l);removed.add(l);merged++;}else canons.push(l);
+  }
+  if(merged)LEADS=LEADS.filter(l=>!removed.has(l));
+  return merged;
+}
+// PARENT-NAME RELABEL — when a row swallowed several differently-named listings (a multi-brand firm like
+// Hunnaball, or a firm with brand variants), label it with the OWNER, not a satellite brand, so outreach
+// says "Dear Hunnaball…" not "Dear Geo Paskell…". Owner = the merged name that matches the website-domain
+// root (hunnaball.co.uk → a "Hunnaball…" name); else the most frequently occurring name. All the other
+// names are retained in l.tradingBrands so the operator sees them and never approaches the same owner twice.
+function relabelMergedRows(){
+  let relabeled=0;
+  LEADS.forEach(l=>{
+    const names=[l.name,...(l.brands||[]),...((l.branches||[]).map(b=>b&&b.name))].filter(Boolean);
+    const distinct=[...new Set(names)];
+    if(distinct.length<2){l.tradingBrands=[];return;}
+    const root=(domainOf(l.website)||'').split('.')[0].replace(/^(the|my)/,'').replace(/(funerals?|group|holdings?|co|ltd)$/,'');
+    let parent=null;
+    if(root.length>=4){const r5=root.slice(0,5); parent=distinct.find(n=>{const nk=nameKey(n);return nk&&(nk.includes(r5)||root.includes(nk.slice(0,5)));});}
+    if(!parent){const freq={}; names.forEach(n=>freq[n]=(freq[n]||0)+1); parent=distinct.slice().sort((a,b)=>(freq[b]-freq[a])||(a.length-b.length))[0];}
+    if(parent&&parent!==l.name){l.name=parent;relabeled++;}
+    l.tradingBrands=distinct.filter(n=>n!==l.name);
+  });
+  return relabeled;
+}
+// Every removal records the exact rule + trigger. Runs once at the end of enrichment (post final dedupe).
+function applyChainVerdicts(ctx,groupSet){
+  const set=chainDomainSet();
+  const consol=parseConsolidators().map(c=>c.name).filter(Boolean);
+  const pats=(ctx&&ctx.namePatterns)||buildNamePatterns((($('blocklist').value||'')+','+($('negKw').value||'')).split(/[,\n]/));
+  const grp=groupSet||new Set();
+  const keep=[]; const out={excluded:0, flagged:0, saifOverridden:0, byTrigger:{}, nameOnlyKept:0, removed:[]};
+  for(const l of LEADS){
+    const wd=domainOf(l.website);
+    const emails=emailsOf(l);
+    const chainEmails=emails.filter(e=>isChainDomain(emDom(e),set));
+    const ownEmails=emails.filter(e=>!isChainDomain(emDom(e),set));
+    // ownership is ACTED ON only from HIGH-confidence evidence: the firm's OWN site disclosure, or a corporate
+    // PSC from a HIGH-confidence Companies House match (l.independent='N —' is now only set when chConf=high).
+    const disclosure=/^N\b/.test(String(l.independent||''));
+    const saif=isTradeBodyIndependent(l);
+    // DELETION REQUIRES ONE HIGH-CONFIDENCE IDENTITY MATCH: a blocklisted chain domain on the firm's own
+    // website / only-email; the firm's own ownership disclosure (or high-conf CH PSC); an EXACT canonical
+    // consolidator brand in the name (fix B); or a match in the CONFIRMED-CHAIN registry (proven before).
+    // Group-domain is NOT here (merge + review). Weaker token name matches only FLAG (below).
+    const brandHit=canonicalBrandHit(l.name);
+    const confirmed=confirmedChainHit(l);
+    let trigger=null, detail='', evidenced=false;
+    if(wd&&isChainDomain(wd,set)){trigger='chain-domain';detail=wd;evidenced=true;}                       // own website IS a blocklisted chain
+    else if(chainEmails.length&&!ownEmails.length){trigger='chain-email';detail=chainEmails[0];evidenced=true;}  // only contact is a blocklisted chain domain
+    else if(disclosure){trigger='ownership-disclosure';detail=String(l.independent).replace(/^N\s*[—-]\s*/,'').slice(0,60);evidenced=true;}  // own site / high-conf CH PSC
+    else if(brandHit){trigger='chain-brand';detail=brandHit;}                                              // exact canonical consolidator brand
+    else if(confirmed){trigger='confirmed-chain';detail=confirmed.parent+' (registry: '+(confirmed.evidence||'')+')';}  // proven before
+    if(trigger){
+      if(saif){out.saifOverridden++;log(`⚠ SAIF/independent-sourced firm EXCLUDED on HARD evidence — "${l.name}" (${trigger}: ${detail}). A SAIF member should not be a chain; verify the source data.`,'er');}
+      // AUTO-GROW the registry: a fresh HARD-evidence (domain/email/ownership) exclusion is written back so
+      // future CHEAP runs inherit it without re-proving. (Brand/registry hits are already known — don't re-add.)
+      if(evidenced && addConfirmedChain(l.name,l.area,detail.split(' ')[0],trigger)){out.newlyConfirmed=(out.newlyConfirmed||0)+1;}
+      out.excluded++; out.byTrigger[trigger]=(out.byTrigger[trigger]||0)+1;
+      out.removed.push({name:l.name,rule:trigger,pattern:detail});
+      EXCLUDED++; DROPPED.push({name:l.name,reason:trigger,pattern:detail,area:l.area||'',district:l.district||'?',address:l.address||'',phone:l.phone||'',website:l.website||'',emails:l.emails||'',sources:(l.sources||[]).join('+'),rating:l.rating,reviews:l.reviews,branches:(l.branches||[]).slice()});
+      continue;
+    }
+    // NAME match → FLAG only (never delete); SAIF members are immune from name flags
+    const nameHit=saif?null:nameChainHit(l.name,pats);
+    if(nameHit){l.suspectedChain=true;l.suspectPattern=nameHit;out.flagged++;out.nameOnlyKept++;}
+    else{l.suspectedChain=false;l.suspectPattern='';}
+    keep.push(l);
+  }
+  LEADS=keep;
+  return out;
+}
+// Back-compat shim: older call sites did excludeChains() before a dedupe to prevent contamination merges.
+// Now that's just the email scrub (verdicts happen once, post-merge, via applyChainVerdicts).
+function excludeChains(){return {removed:0,cleaned:scrubChainEmails()};}
+function dedupeLeadsByIdentity(){
+  const byKey=new Map(); const removed=new Set(); let merged=0;
+  for(const l of LEADS){
+    if(removed.has(l))continue;
+    const keys=identityKeys(l,l.area); if(!keys.length)continue;  // strong ids only (CH / domain / email)
+    let canon=null;
+    for(const k of keys){const c=byKey.get(k); if(c&&c!==l&&!removed.has(c)&&!strongConflict(c,l)){canon=c;break;}}
+    if(canon){mergeLead(canon,l);removed.add(l);merged++;keys.forEach(k=>byKey.set(k,canon));}
+    else keys.forEach(k=>{if(!byKey.has(k))byKey.set(k,l);});
+  }
+  if(merged)LEADS=LEADS.filter(l=>!removed.has(l));
+  return merged;
+}
+// Copy a website onto website-less rows from a same-name+area sibling that has one — WITHOUT merging,
+// so every branch row keeps its own (branch-specific) URL and gets crawled for its own branch email.
+function fillWebsites(){
+  let filled=0; const bySite=new Map();
+  LEADS.forEach(l=>{if(l.website){const k=nameKey(l.name)+'|'+(l.area||'').toUpperCase();if(!bySite.has(k))bySite.set(k,l.website);}});
+  LEADS.forEach(l=>{if(!l.website){const k=nameKey(l.name)+'|'+(l.area||'').toUpperCase();if(bySite.has(k)){l.website=bySite.get(k);filled++;}}});
+  return filled;
+}
+/* ---------- cross-fill a firm's email/website across its own rows ----------
+   Copy a KNOWN email onto rows of the SAME firm that lack it — matched on website DOMAIN, Companies
+   House NUMBER, or same NAME+AREA (the three the operator named). Groups are INDEPENDENT (no union-find
+   across key types), so a stray shared email can never chain two firms together. Company NUMBER is
+   filled only inside a domain group (proof of the same company); it never travels on the name key. A
+   final cross-firm cleanup drops any email whose domain is ANOTHER firm's website domain (scrape/pool
+   error), which is the safety net for the looser name+area matching. */
+function propagateFirmData(){
+  let filledSite=0, filledEmail=0;
+  const pool=(groupMap,fillCH)=>groupMap.forEach(g=>{
+    if(g.length<2)return;
+    const co=fillCH?(g.map(chOf).find(Boolean)||''):'';
+    const emails=[...new Set([].concat(...g.map(emailsOf)))];
+    g.forEach(l=>{
+      if(fillCH&&!chOf(l)&&co)l.companyNo=co;
+      if(emails.length){const cur=emailsOf(l);const m=[...new Set([...cur,...emails])];if(m.length>cur.length){l.emails=m.join('; ');filledEmail++;}}
+    });
+  });
+  // STAGE 3 — emails are pooled ONLY inside a proven-SAME-FIRM group: shared website DOMAIN or shared
+  // Companies House NUMBER. The old name+area email pool is GONE — it was the contamination vector that
+  // put a chain address on an independent (T Cribb ← funeralpartners) and then fused 14 chain branches in.
+  const byDom=new Map(), byCH=new Map();
+  const push=(mp,k,l)=>{if(!k)return;if(!mp.has(k))mp.set(k,[]);mp.get(k).push(l);};
+  LEADS.forEach(l=>{push(byDom,domainOf(l.website),l);push(byCH,chOf(l),l);});
+  pool(byDom,true);    // shared website domain = same company → pool emails + fill company number
+  pool(byCH,false);    // shared Companies House number = same company → pool emails
+  // copy a WEBSITE onto website-less rows from a same-name+area sibling that has one (to enable crawl)
+  filledSite=fillWebsites();
+  // clean cross-firm mis-scrapes/mis-pools: drop an email whose domain is used as the WEBSITE by a
+  // DIFFERENTLY-NAMED firm (e.g. info@pgoxley.co.uk that leaked onto a Hunnaball row). Same-firm rows
+  // keep the email even when its domain differs from the website (West & Coe: site westandcoe.com, mail
+  // @westcoe.co.uk — both carry nameKey "westcoe", so the address is preserved and they merge on it).
+  // Always rewrites l.emails to the normalised set, so any placeholder/bad-TLD junk is stripped from the
+  // stored string too (emailsOf() already filters it on read; this makes the stored value match).
+  const domToNames=new Map(); const chSet=chainDomainSet();
+  LEADS.forEach(l=>{const d=domainOf(l.website); if(d){if(!domToNames.has(d))domToNames.set(d,new Set());domToNames.get(d).add(nameKey(l.name));}});
+  LEADS.forEach(l=>{
+    const own=domainOf(l.website), nk=nameKey(l.name), all=emailsOf(l);
+    const clean=all.filter(e=>{
+      const ed=(e.split('@')[1]||'').toLowerCase();
+      if(isChainDomain(ed,chSet))return false;        // STAGE 3 — a chain-domain address never rides on any row
+      if(ed===own)return true;                        // own website domain — always keep
+      const owners=domToNames.get(ed);                // is this email's domain some firm's WEBSITE?
+      return !(owners && !owners.has(nk));             // drop only if it's a DIFFERENT firm's website
+    });
+    const next=clean.join('; ');
+    if((l.emails||'')!==next)l.emails=next;
+  });
+  return {filledSite,filledEmail};
+}
+// For firms a directory listed with NO website, look one up on Google Places by name+postcode so it
+// can be crawled for an email. Guarded by a name check to avoid grabbing a different business's site.
+async function discoverWebsites(){
+  const need=LEADS.filter(l=>!l.website);
+  if(!need.length)return 0;
+  // Look up a website for EVERY blank row (the free Google-sibling cross-fill already ran; these are the
+  // rows with no sibling). The cap SCALES with the work so a single county finishes fast while a full
+  // 8-area London region gets full coverage — it's no longer a flat 80. Pacing is preserved (6 workers +
+  // a 150ms space between calls) so raising the cap doesn't trigger Places throttling or run costs up.
+  // 800 is a runaway backstop, not an expected limit. The time budget scales too (floor 35s so a small
+  // county isn't padded; ceiling 6 min) and is only a safety ceiling — the step normally ends when the
+  // last lookup returns, well inside it.
+  const WORKERS=6, PACE_MS=150, PER_LOOKUP_MS=1450;
+  let i=0, found=0, hitDeadline=false;
+  const cap=Math.min(need.length,800);
+  const budget=Math.min(Math.max(Math.ceil(cap/WORKERS)*PER_LOOKUP_MS*1.4,35000),360000);
+  const deadline=Date.now()+budget;
+  const worker=async()=>{
+    while(i<cap){
+      if(Date.now()>=deadline){hitDeadline=true;break;}
+      const l=need[i++];
+      const pc=((l.address||l.postcode||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)||[l.postcode||''])[0];
+      try{
+        const data=await searchDistrict(`${l.name} ${pc||l.area||''}`.trim(),1);
+        const hit=(data.results||[]).find(r=>r.website&&nameKey(r.name).slice(0,8)===nameKey(l.name).slice(0,8));
+        if(hit&&hit.website){l.website=hit.website;found++;}
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,PACE_MS));  // keep it polite even at scale
+    }
+  };
+  await Promise.all(Array.from({length:WORKERS},worker));
+  if(hitDeadline)log(`Website lookup hit its ${Math.round(budget/1000)}s safety budget with ${need.length-i} row(s) unchecked — re-run ✦ Enrich to continue, or they stay website-less.`,'wn');
+  return found;
+}
+
+/* ---------- finalize: rules pass over the merged pool → LEADS, then optional classify+enrich ---------- */
+/* ==================== REGISTER-SUPPLY LAYER ====================
+   The Email Lead Generator writes a national file of register-verified independent counterparties
+   (out/register_supply.csv). Prospector imports it as a layer, filterable by CATEGORY + POSTCODE_AREA,
+   and merges register firms with discovery results using the SAME counterparty merge rules. Every row
+   gets a SOURCE (register / discovery / both); register firms carry their SAIF_MEMBER flag to export.
+   Confirmed consolidators / registry subsidiaries are excluded throughout. ================================ */
+let REGISTER_SUPPLY=[];
+function parseCSV(text){
+  const rows=[]; let i=0, field='', row=[], q=false; text=text.replace(/\r\n?/g,'\n');
+  while(i<text.length){const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else q=false; } else field+=c; }
+    else { if(c==='"')q=true; else if(c===','){row.push(field);field='';} else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';} else field+=c; }
+    i++;
+  }
+  if(field.length||row.length){row.push(field);rows.push(row);}
+  if(!rows.length)return [];
+  const hdr=rows[0].map(h=>h.trim());
+  return rows.slice(1).filter(r=>r.some(x=>x&&x.trim())).map(r=>{const o={};hdr.forEach((h,j)=>o[h]=(r[j]||'').trim());return o;});
+}
+function loadRegisterSupply(text){
+  try{
+    REGISTER_SUPPLY=parseCSV(text).filter(r=>r.COMPANY);
+    const cats=[...new Set(REGISTER_SUPPLY.map(r=>r.CATEGORY).filter(Boolean))];
+    const areas=[...new Set(REGISTER_SUPPLY.map(r=>r.POSTCODE_AREA).filter(Boolean))];
+    try{localStorage.setItem('pp_RegisterSupply',text.length<4500000?text:'');}catch(e){}
+    const st=$('regSupplyStatus'); if(st)st.textContent=`✓ ${REGISTER_SUPPLY.length} register firms · ${cats.length} categor${cats.length===1?'y':'ies'} · ${areas.length} areas`;
+    log(`Register supply loaded — ${REGISTER_SUPPLY.length} register-verified counterparties across ${areas.length} area(s), categories: ${cats.slice(0,8).join(', ')}. Will merge into every sweep of a matching area.`,'ok');
+  }catch(e){log('Register supply parse failed — '+e.message,'er');}
+}
+function initRegisterSupply(){const t=localStorage.getItem('pp_RegisterSupply'); if(t){loadRegisterSupply(t);}}
+// Merge register firms for the swept areas + category into LEADS using the existing counterparty rules.
+function foldInRegister(catKey,catLabel){
+  LEADS.forEach(l=>{if(!l.source)l.source='discovery';});
+  if(!REGISTER_SUPPLY.length)return {registerOnly:0,discoveryOnly:LEADS.length,both:0,loaded:false};
+  const areas=new Set(LEADS.map(l=>(l.area||'').toUpperCase()).filter(Boolean));
+  const cat=(catKey||'').toLowerCase(), catL=(catLabel||'').toLowerCase().split(/\s+/)[0];
+  const catMatch=c=>{c=(c||'').toLowerCase();return !cat||cat==='default'||!c||c.includes(cat)||cat.includes(c.split('-')[0])||(catL&&c.includes(catL));};
+  const set=chainDomainSet();
+  const isRegChain=r=>/chain/i.test(r.INDEPENDENT_OR_CHAIN||'')||!!(r.PARENT_GROUP&&r.PARENT_GROUP.trim())||isChainDomain(domainOf(r.WEBSITE),set)||!!confirmedChainHit({name:r.COMPANY,area:r.POSTCODE_AREA})||!!canonicalBrandHit(r.COMPANY);
+  let added=0, matched=0, excludedChain=0;
+  REGISTER_SUPPLY.forEach(r=>{
+    const area=(r.POSTCODE_AREA||'').toUpperCase();
+    if(!areas.has(area)||!catMatch(r.CATEGORY))return;
+    if(isRegChain(r)){excludedChain++;return;}
+    const rnk=nameKey(r.COMPANY), rdom=domainOf(r.WEBSITE);
+    const m=LEADS.find(l=>(l.area||'').toUpperCase()===area && (
+      (rdom&&domainOf(l.website)===rdom) || nameKey(l.name)===rnk ||
+      (nameKey(l.name).length>=6&&rnk.startsWith(nameKey(l.name))) || (rnk.length>=6&&nameKey(l.name).startsWith(rnk))
+    ));
+    if(m){
+      m.source = m.source==='register'?'register':'both';
+      m.saifMember = String(r.SAIF_MEMBER||''); if(!m.companyId)m.companyId=r.COMPANY_ID; m.registerVerified=r.VERIFIED_DATE;
+      if(!emailsOf(m).length&&r.EMAIL)m.emails=r.EMAIL; if(!m.phone&&r.PHONE)m.phone=r.PHONE;
+      if(!m.website&&r.WEBSITE)m.website=r.WEBSITE; if(!m.contact&&r.CONTACT_NAME)m.contact=r.CONTACT_NAME;
+      if(!m.register)m.register='register:'+(r.SOURCE||'');
+      if(r.TRADING_BRANDS)m.tradingBrands=[...new Set([...(m.tradingBrands||[]),...r.TRADING_BRANDS.split(/[;|]/).map(s=>s.trim()).filter(Boolean)])];
+      matched++;
+    } else {
+      LEADS.push({area, district:r.DISTRICT||'?', name:r.COMPANY, address:r.ADDRESS||'', postcode:r.POSTCODE||'',
+        phone:r.PHONE||'', emails:r.EMAIL||'', contact:r.CONTACT_NAME||'', website:r.WEBSITE||'',
+        source:'register', saifMember:String(r.SAIF_MEMBER||''), companyId:r.COMPANY_ID, registerVerified:r.VERIFIED_DATE,
+        register:'register:'+(r.SOURCE||''), memberships:(r.SOURCE||'').toUpperCase(),
+        tradingBrands:(r.TRADING_BRANDS||'').split(/[;|]/).map(s=>s.trim()).filter(Boolean),
+        sources:['register'], foundAreas:[area], rating:null, reviews:0, types:[], branchCount:1, branchPCs:[], branches:[], independent:'Y', enriched:true});
+      added++;
+    }
+  });
+  const by={register:0,discovery:0,both:0}; LEADS.forEach(l=>{by[l.source]=(by[l.source]||0)+1;});
+  return {loaded:true, registerOnly:by.register, discoveryOnly:by.discovery, both:by.both, addedFromRegister:added, matched, excludedChain};
+}
+async function finalizePool(pool,ctx,opts){
+  opts=opts||{};
+  const selectedAreas=(opts.selectedAreas||[]).map(a=>a.toUpperCase()), runFollowups=!!opts.runFollowups;
+  LEADS=[];EXCLUDED=0;DROPPED=[];
+  if(pool.foreignCount)log(`Foreign/non-UK rejected before the pool: ${pool.foreignCount} row(s) (no UK postcode, or a foreign country/US-state address).`,'wn');
+  const {POOL}=pool;
+  for(const p of POOL){
+    if(ctx.cap&&LEADS.length>=ctx.cap)break;
+    const nm=normTxt(p.name);
+    const dirClean=p.sources.some(s=>s!=='google'); // trade-body/directory listing = category-clean by definition
+    const pcm=(p.postcode||p.address||'').toUpperCase().match(/\b([A-Z]{1,2})(\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/);
+    const realArea=pcm?pcm[1]:null, realDistrict=pcm?(pcm[1]+pcm[2]):null;
+    let excl=null;
+    if($('ruleArea').checked && selectedAreas.length && realArea && !selectedAreas.includes(realArea) && /^[A-Z]{1,2}$/.test(realArea))excl='out-of-area';
+    if(!excl){const wc=wrongCategory(p.name,p.types,ctx.catKey); if(wc){excl='wrong-category';p._wcDetail=wc;}}  // crematorium/cemetery ≠ funeral director, etc.
+    // NOTE (BUG-3/4 fix): chain exclusion NO LONGER happens here at row level. The name-substring match
+    // that deleted "Cooper & Sons" (via "coop") etc. is GONE. All chain verdicts are decided ONCE per
+    // company AFTER the merge (applyChainVerdicts), on evidence; a name match only flags, never deletes.
+    if(!excl&&!dirClean&&ctx.req.types&&(ctx.req.types.length||((ctx.req.kw||[]).length))){
+      const tset=(p.types||[]);
+      const typeHit=ctx.req.types.some(t=>tset.includes(t));
+      const kwHit=(ctx.req.kw||[]).some(k=>nm.includes(normTxt(k))||tset.some(t=>t.includes(k.replace(/\s+/g,'_'))));
+      if(!typeHit&&!kwHit)excl='irrelevant';
+    }
+    if(!excl&&ctx.mustOpen&&p.status&&p.status!=='OPERATIONAL')excl='closed';
+    if(!excl&&ctx.minRev&&(p.reviews||0)<ctx.minRev)excl='reviews';
+    if(!excl&&ctx.minRate&&(p.rating||0)<ctx.minRate)excl='rating';
+    if(!excl&&ctx.needWeb&&!p.website)excl='no-web';
+    if(!excl&&ctx.needPhone&&!p.phone)excl='no-phone';
+    if(excl){EXCLUDED++;DROPPED.push({name:p.name,reason:excl,pattern:p._wcDetail||'',area:realArea||'',district:realDistrict||'?',address:p.address||'',phone:p.phone||'',website:p.website||'',sources:(p.sources||[]).join('+'),rating:p.rating,reviews:p.reviews});continue;}
+    const memberships=[...p.memberships];
+    const foundAreas=[...(p.areas||[])].filter(Boolean);
+    const primaryArea=realArea||foundAreas[0]||'';  // the firm's ACTUAL postcode area (correct for AfterLife assignment)
+    const branchPCs=[...(p.pcs||[])];
+    const branches=(p.branches||[]).slice();
+    LEADS.push({area:primaryArea,district:realDistrict||'?',foundAreas,
+      name:p.name,address:p.address,postcode:p.postcode,phone:p.phone,website:p.website,
+      rating:p.rating,reviews:p.reviews,types:p.types,status:p.status,placeId:p.placeId,
+      sources:p.sources.slice(),memberships:memberships.join(', '),
+      emails:p.email||'',contact:p.contact||'',companyNo:p.companyNo||'',sic:'',
+      register:memberships.join(', ')||'',
+      branchCount:branchPCs.length,branchPCs,branches,  // same-area branches merged into this one company row
+      independent:ctx.useChains?'Y?':'-',enriched:false});
+  }
+  // one row per COMPANY per AREA now; a row that swallowed >1 same-area branch is flagged (informative)
+  let mergedRows=0;
+  LEADS.forEach(l=>{if((l.branchCount||0)>1){l.branchDup=true;mergedRows++;}});
+  const firmId=l=>domainOf(l.website)||nameKey(l.name);
+  const multiAreaFirms=(()=>{const m={};LEADS.forEach(l=>{const k=firmId(l);(m[k]=m[k]||new Set()).add(l.area);});return Object.values(m).filter(s=>s.size>1).length;})();
+  $('bar').style.width='100%';
+  if(mergedRows)log(`${mergedRows} company(ies) had several branches in one area — merged to a single row each (one slot, one email per area, flagged ⑃).`,'wn');
+  if(multiAreaFirms)log(`${multiAreaFirms} company(ies) span multiple postcode areas — one row per area (a separate slot in each).`,'wn');
+  // Fold the register-supply layer in for the swept areas + category (one row per counterparty; SOURCE set).
+  {const rs=foldInRegister(ctx.catKey||detectCategory(ctx.term),ctx.catLabel||ctx.term);
+   if(rs.loaded)log(`SUPPLY SPLIT — register-verified ${rs.registerOnly+rs.both}, discovery-only ${rs.discoveryOnly}, in BOTH ${rs.both} (register added ${rs.addedFromRegister} the sweep missed; ${rs.excludedChain} register chain rows excluded).`,'ok');}
+  reportSlots('Distinct companies (sellable slots) by area, pre-vetting');
+  setStats();render();
+  if(runFollowups){
+    if($('aiClassify').checked&&LEADS.length&&MODE==='functions'){await aiClassify(ctx.rawReq);}
+    else if($('aiClassify').checked&&MODE!=='functions'){log('AI classification needs the Netlify deployment (functions offline).','er');}
+    // NB: auto-enrich is triggered by the CALLER after it clears `running` — enrichAll() guards on
+    // `running`, so calling it here (mid-sweep, running=true) would no-op.
+  }
+}
+
+/* ---------- SINGLE-AREA sweep ---------- */
+async function runSearch(){
+  if(running)return;
+  const areaList=areaListFromBox();
+  if(areaList.length>1)return runRegionSweep(areaList);   // several areas in the box → run them as a region sweep
+  const area=areaList[0]||'';
+  const districts=$('districts').value.split(',').map(s=>s.trim()).filter(Boolean).filter(d=>/^[A-Z]{1,2}\d/i.test(d));
+  const town=$('town').value.trim();
+  const townMode=(!area||!districts.length)&&!!town;
+  running=true;$('run').disabled=true;regionCancel=false;
+  const ctx=await prepareSweep();
+  if(!ctx){running=false;$('run').disabled=false;return;}
+  if(!townMode&&(!area||!districts.length)){log('Need a request plus either a postcode area with districts, or just a town name.','er');running=false;$('run').disabled=false;return;}
+  const tiles=townMode?[town,town+' town centre','near '+town]:districts;
+  $('sDistricts').textContent=tiles.length;$('sRaw').textContent=0;
+  const pool=makePool();
+  log(townMode?`Sweep started — town mode: "${town}", term "${ctx.term}".`:`Sweep started — ${area}, ${tiles.length} districts, term "${ctx.term}".`,'ok');
+  const used=await gatherArea(area,districts,tiles,town,townMode,ctx,pool);
+  log(`Gather complete — ${pool.rawCount} raw from [${[...used].join(', ')}], ${pool.POOL.length} unique after merge.`,'ok');
+  await finalizePool(pool,ctx,{selectedAreas:townMode?[]:[area],runFollowups:true});
+  log(`Sweep complete — ${LEADS.length} kept, ${EXCLUDED} excluded.`,'ok');
+  if(townMode&&LEADS.length){
+    const counts={};LEADS.forEach(l=>{if(l.area)counts[l.area]=(counts[l.area]||0)+1;});
+    const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+    if(top)log(`Town mode result: "${town}" looks like postcode area ${top[0]} (${top[1]} of ${LEADS.length}). For full coverage, put ${top[0]} in the area box.`,'wn');
+  }
+  running=false;$('run').disabled=false;setStats();
+  // Auto-enrich now that the sweep has cleared `running` (enrichAll guards on it). Enrichment fills
+  // websites/emails, which lets the email/domain dedupe collapse the directory duplicates.
+  if($('autoEnrich').checked&&LEADS.length&&MODE==='functions'){log('Auto-enrichment starting…','ok');enrichAll();}
+}
+
+/* ---------- MULTI-AREA (county/region) sweep — paced, resumable, cancellable ---------- */
+async function runRegionSweep(areasOverride){
+  if(running)return;
+  const areas=(Array.isArray(areasOverride)&&areasOverride.length)?areasOverride:getSelectedAreas();
+  if(!areas.length){log('Pick a county or type postcode areas (e.g. CO, CM, SS, IG, RM) in the Postcode area or Region box.','er');return;}
+  const town=$('town').value.trim();
+  running=true;$('run').disabled=true;$('regionRun').disabled=true;regionCancel=false;
+  const ctx=await prepareSweep();
+  if(!ctx){running=false;$('run').disabled=false;$('regionRun').disabled=false;return;}
+  const pool=makePool();
+  REGION={ctx,pool,town,queue:areas.slice(),done:[],current:null,total:areas.length,selectedAreas:areas.slice()};
+  showRegionPanel(true);
+  log(`▶ REGION SWEEP — ${areas.length} areas: ${areas.join(', ')} · term "${ctx.term}" · sources ${ctx.wantSources.join(' → ')}. Paced between areas to avoid blocking.`,'ok');
+  await regionLoop();
+}
+async function regionLoop(){
+  const {ctx,pool,town}=REGION;
+  while(REGION.queue.length && !regionCancel){
+    const area=REGION.queue[0];REGION.current=area;updateRegionPanel('running');
+    const districts=districtsForArea(area);
+    $('sDistricts').textContent=districts.length;
+    log(`— Area ${REGION.done.length+1}/${REGION.total}: ${area} (${districts.length} districts)…`,'wn');
+    try{await gatherArea(area,districts,districts,town,false,ctx,pool);}
+    catch(e){log(`Area ${area} failed — ${e.message} (continuing to next area).`,'er');}
+    REGION.queue.shift();REGION.done.push(area);REGION.current=null;updateRegionPanel('running');
+    if(REGION.queue.length&&!regionCancel)await new Promise(r=>setTimeout(r,900)); // polite pause between areas
+  }
+  const finished=REGION.queue.length===0;
+  log(`Merging & finalizing ${pool.POOL.length} unique firm(s) across ${REGION.done.length} area(s)…`,'ok');
+  await finalizePool(pool,ctx,{selectedAreas:REGION.selectedAreas,runFollowups:false}); // heavy classify/enrich/vet are manual for a region
+  running=false;$('run').disabled=false;$('regionRun').disabled=false;
+  setStats();  // CRUCIAL: re-enable Enrich/Vet buttons (finalizePool ran setStats while running=true → they were left disabled). Without this the Enrich button is dead after a region sweep.
+  updateRegionPanel(finished?'done':'paused');
+  if(finished){
+    log(`REGION SWEEP COMPLETE — ${REGION.total} areas · ${pool.POOL.length} unique firm(s) region-wide · ${LEADS.length} kept · ${EXCLUDED} excluded.`,'ok');
+    // Directory rows (NAFD/SAIF/etc.) have no website by design, so most of the raw region pool looks
+    // blank until enrichment fills websites (from Google siblings + discovery) and collapses the dupes.
+    // Auto-run it now if the operator ticked auto-enrich, otherwise tell them it's the next step.
+    if($('autoEnrich').checked&&LEADS.length&&MODE==='functions'){log('Auto-enrichment starting (fills websites/emails and collapses directory duplicates)…','ok');enrichAll();}
+    else log('Next: ✦ Enrich kept leads (fills websites/emails, collapses directory duplicates), then ⚖ Vet & Rank.','wn');
+  }
+  else log(`Region sweep PAUSED — ${REGION.done.length}/${REGION.total} areas done, ${REGION.queue.length} remaining, ${LEADS.length} firms so far. Click ▶ Resume to continue.`,'wn');
+}
+function cancelRegion(){if(REGION&&running){regionCancel=true;log('Cancelling after the current area finishes…','wn');updateRegionPanel('cancelling');}}
+async function resumeRegion(){
+  if(!REGION||running||!REGION.queue.length)return;
+  running=true;$('run').disabled=true;$('regionRun').disabled=true;regionCancel=false;
+  log(`▶ Resuming region sweep — ${REGION.queue.length} area(s) left.`,'ok');
+  await regionLoop();
+}
+function showRegionPanel(v){const p=$('regionPanel');if(p)p.style.display=v?'block':'none';}
+function updateRegionPanel(state){
+  const p=$('regionPanel');if(!p||!REGION)return;
+  const chip=(a,cls,lbl)=>`<span class="rchip ${cls}">${a}${lbl?' '+lbl:''}</span>`;
+  let chips='';
+  REGION.done.forEach(a=>chips+=chip(a,'rdone','✓'));
+  if(REGION.current)chips+=chip(REGION.current,'rcur',state==='cancelling'?'…cancelling':'● running');
+  REGION.queue.filter(a=>a!==REGION.current).forEach(a=>chips+=chip(a,'rwait',''));
+  const uniq=REGION.pool?REGION.pool.POOL.length:0;
+  const status=state==='done'?'✓ complete':state==='paused'?'paused':state==='cancelling'?'cancelling…':'running';
+  p.innerHTML=`<div class="rhead"><b>Region sweep — ${REGION.done.length}/${REGION.total} areas · ${status}</b>`+
+    `<span class="rtotal">${uniq} unique firm(s) so far${LEADS.length&&(state==='done'||state==='paused')?` · ${LEADS.length} kept`:''}</span></div>`+
+    `<div class="rchips">${chips}</div>`+
+    `<div class="rbtns">`+
+    ((state==='running'||state==='cancelling')?`<button class="ghost small" onclick="cancelRegion()" ${state==='cancelling'?'disabled':''}>■ Cancel</button>`:'')+
+    ((state==='paused'&&REGION.queue.length)?`<button class="primary small" style="width:auto;padding:8px 14px" onclick="resumeRegion()">▶ Resume (${REGION.queue.length} left)</button>`:'')+
+    `</div>`;
+}
+
+async function enrichAll(){
+  if(running||!LEADS.length)return;
+  if(MODE!=='functions'){log('Enrichment needs the serverless functions — deploy the folder to Netlify (drag the folder CONTENTS so netlify.toml sits at the root), then reload. Search still works in browser mode.','er');return;}
+  running=true;$('enrichBtn').disabled=true;$('run').disabled=true;
+  // STEP A — cross-fill a website onto directory rows from a same-name sibling (NO merge yet, so each
+  // branch row keeps its own URL and gets crawled for its own branch email).
+  {const filled=fillWebsites(); if(filled)log(`Cross-fill: gave ${filled} directory row(s) a website from a sibling listing (crawled next).`,'ok'); render();setStats();}
+  // STEP B — look up a website for firms STILL without one (bounded), then cross-fill again. No merge yet.
+  {const found=await discoverWebsites(); if(found)log(`Website lookup: found a site for ${found} firm(s) the directories listed without one.`,'ok');
+   fillWebsites();
+   const still=LEADS.filter(l=>!l.website).length; if(still)log(`${still} firm(s) still have no website on record — can't crawl those for an email.`,'wn');
+   render();setStats();}
+  const todo=LEADS.filter(l=>!l.enriched);
+  log(`Enriching ${todo.length} leads (website crawl + Companies House${localStorage.getItem('pp_Hunter')?' + Hunter':''})…`,'ok');
+  let done=0;
+  const worker=async()=>{
+    while(todo.length){
+      const l=todo.shift();
+      try{
+        const jobs=[];
+        jobs.push(l.website?fetch('/.netlify/functions/enrich',{method:'POST',body:JSON.stringify({website:l.website,name:l.name,town:$('town').value||'',area:l.area||'',hunterKey:localStorage.getItem('pp_Hunter')||undefined})}).then(r=>r.json()):Promise.resolve({emails:[],contacts:[]}));
+        jobs.push(fetch('/.netlify/functions/companieshouse',{method:'POST',body:JSON.stringify({name:l.name,postcode:l.postcode||l.address||'',chKey:localStorage.getItem('pp_CH')||undefined})}).then(r=>r.json()).catch(()=>({})));
+        const [en,ch]=await Promise.all(jobs);
+        l.emails=(en.emails||[]).join('; ');
+        if(en.emailsTrimmed){window.__emailsTrimmed=(window.__emailsTrimmed||0)+en.emailsTrimmed;}
+        l.contact=(en.contacts||[])[0]||'';
+        l.enrichNote=en.note||'';
+        if(en.siteText)l.siteText=en.siteText;
+        if(en.ownership)l.independent='N — '+en.ownership+' (site disclosure)';
+        // AR of a funeral-plan provider (Golden Charter, Safe Hands, Golden Leaves, Ecclesiastical…) is
+        // REQUIRED since 2022 and is NEUTRAL for independence — GLOBAL RULE, never a "NOT INDEPENDENT"
+        // flag. Belt-and-braces here even if the server sent it through as a regStatus principal.
+        if(en.planAR||(en.regStatus&&/APPOINTED REPRESENTATIVE/i.test(en.regStatus)&&PLAN_PROVIDERS_FE.test(en.regPrincipal||en.planProvider||''))){
+          l.planAR=true; l.planProvider=en.planProvider||en.regPrincipal||'';
+          l.regStatus='Funeral-plan AR'+(l.planProvider?' ('+l.planProvider+')':'');
+          // do NOT set aiType='NOT INDEPENDENT' and do not lower anything — independence is ownership-only
+        } else if(en.regStatus){
+          l.regStatus=en.regStatus+(en.regPrincipal?' of '+en.regPrincipal:'');
+          l.aiType=/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU/i.test(en.regStatus)?'NOT INDEPENDENT':(l.aiType||'');
+        }
+        if(en.frn)l.frn=en.frn;
+        if(ch&&ch.found){
+          l.chConfidence=ch.matchConfidence||'low'; l.chMatchReason=ch.matchReason||'';
+          // A fuzzy CH name match may ENRICH (company number, director names) but must NEVER be sufficient to
+          // DELETE on its own — it collides in every category (the T Cribb false PSC match). Officers/number
+          // are taken regardless; ownership is only ACTED ON when the match is HIGH confidence (name + postcode).
+          if(!l.contact&&ch.officers&&ch.officers.length)l.contact=ch.officers[0].split(',').reverse().join(' ').trim();
+          if(l.chConfidence==='high'){
+            l.companyNo=ch.companyNumber||''; l.sic=(ch.sicCodes||[]).join(' '); l.corporateOwners=ch.corporateOwners||[];
+            if(ch.corporateOwners&&ch.corporateOwners.length){
+              const owners=normTxt(ch.corporateOwners.join(' '));
+              const all=[...CHAINS,...$('blocklist').value.split(',')].map(normTxt).filter(Boolean);
+              l.independent=all.some(b=>owners.includes(b))?'N — group-owned':'Y (corp PSC: '+ch.corporateOwners[0]+')';
+            }else{l.independent='Y';}
+          }else{
+            // low/medium confidence: keep the enrichment as a HINT only. Do NOT set an ownership verdict AND
+            // do NOT put the number in companyNo — an unverified CH match must never gate merges (it blocked
+            // West & Coe) or deletion. Held separately for display, never used as an identity key.
+            l.companyNoUnverified=ch.companyNumber||'';
+            if(ch.corporateOwners&&ch.corporateOwners.length){l.chLowConfOwner=ch.corporateOwners[0];}
+          }
+        }
+        l.enriched=true;done++;
+        if(done%5===0||!todo.length){$('bar').style.width=Math.round(done/(done+todo.length)*100)+'%';setStats();render();}
+      }catch(e){l.enriched=true;}
+      await new Promise(r=>setTimeout(r,180));  // gentle pacing so bulk crawling doesn't trip site rate-limits
+    }
+  };
+  await Promise.all([worker(),worker(),worker(),worker(),worker(),worker()]);  // 6 parallel crawlers (was 2) — cuts full-batch enrich time ~3×; per-firm pacing keeps it polite
+  // Data-clean before merging: drop a stray chain email off an independent so it can't fuse chain branches
+  // in. NO exclusion verdict here — that's decided ONCE per company after the final merge.
+  {const c=scrubChainEmails(); if(c)log(`Scrubbed a stray chain email off ${c} independent row(s) (pre-merge data clean).`,'wn');}
+  // STEP D — propagate a firm's own email across ITS rows (domain/CH only), then merge on strong identity.
+  const pfD=propagateFirmData();
+  const reMerged=dedupeLeadsByIdentity();
+  if(pfD.filledEmail||reMerged)log(`Post-crawl: filled ${pfD.filledEmail} email gap(s) from firm siblings; merged ${reMerged} more row(s) (matched on email / domain / Companies House no.).`,'wn');
+  // STEP D½ — Firecrawl DEEP crawl (METERED, 1,000 credits/cycle). The basic crawl misses emails that are
+  // JS-rendered or only shown on a contact/about page — Firecrawl renders JS and reads footer+contact+about.
+  // Runs ONLY for distinct domains STILL email-less after the free crawl+propagation, ONCE per domain
+  // (cached), and BEFORE Hunter (Firecrawl returns the firm's OWN address; Hunter is the last resort).
+  if($('meteredEnrich')&&!$('meteredEnrich').checked){log('Metered enrichment OFF — skipping Firecrawl + Hunter (free/cheap validation run).','wn');}
+  else{
+    const domHasEmail=new Set(); LEADS.forEach(l=>{if(emailsOf(l).length){const d=domainOf(l.website);if(d)domHasEmail.add(d);}});
+    const need=[...new Set(LEADS.map(l=>domainOf(l.website)).filter(d=>d&&!domHasEmail.has(d)))];
+    window.__firecrawlCache=window.__firecrawlCache||{};
+    const cache=window.__firecrawlCache;
+    let calls=0, found=0, i=0;
+    const toCall=need.filter(d=>cache[d]===undefined);
+    if(need.length)log(`Firecrawl deep-crawl: ${need.length} domain(s) still without an email (${toCall.length} new crawl${toCall.length===1?'':'s'}, ${need.length-toCall.length} cached)…`,'wn');
+    const fw=async()=>{
+      while(i<need.length){
+        const dom=need[i++];
+        if(cache[dom]===undefined){
+          calls++;
+          try{const r=await fetch('/.netlify/functions/firecrawl',{method:'POST',body:JSON.stringify({domain:dom,firecrawlKey:localStorage.getItem('pp_Firecrawl')||undefined})});const d=await r.json();cache[dom]=Array.isArray(d.emails)?d.emails:[];if(d.skipped&&/no Firecrawl key/.test(d.reason||''))cache.__noKey=true;}catch(e){cache[dom]=[];}
+          await new Promise(r=>setTimeout(r,250));
+        }
+        const em=(cache[dom]||[]);
+        if(em.length){found++;LEADS.filter(l=>domainOf(l.website)===dom&&!emailsOf(l).length).forEach(l=>{l.emails=[...new Set([...emailsOf(l),...em])].join('; ');});}
+      }
+    };
+    await Promise.all([fw(),fw()]);
+    if(cache.__noKey)log('Firecrawl: no key configured — set FIRECRAWL_API_KEY env var (or paste it in ⚙ Settings) to deep-crawl email-less sites. Skipped.','wn');
+    else if(need.length)log(`Firecrawl: ${calls} live crawl(s) this sweep, found emails for ${found} domain(s). (Metered — one crawl per domain, cached.)`,found?'ok':'wn');
+    if(found){scrubChainEmails();propagateFirmData();const m2=dedupeLeadsByIdentity();if(m2)log(`Merged ${m2} more row(s) after Firecrawl filled their email.`,'ok');}
+  }
+  // STEP E — Hunter.io fallback (METERED). Only after the free methods (crawl + propagation) have failed:
+  // for each DISTINCT website domain that STILL has no email, look it up ONCE and cache it. Domains that
+  // already have an email (on any row) are skipped, so branches of one firm cost a single lookup.
+  if($('meteredEnrich')&&!$('meteredEnrich').checked){/* metered off — Hunter skipped (logged above) */}
+  else{
+    const domHasEmail=new Set(); LEADS.forEach(l=>{if(emailsOf(l).length){const d=domainOf(l.website);if(d)domHasEmail.add(d);}});
+    const need=[...new Set(LEADS.map(l=>domainOf(l.website)).filter(d=>d&&!domHasEmail.has(d)))];
+    window.__hunterCache=window.__hunterCache||{};
+    const cache=window.__hunterCache;
+    let calls=0, found=0, i=0;
+    const toCall=need.filter(d=>cache[d]===undefined);
+    if(need.length)log(`Hunter.io fallback: ${need.length} domain(s) still without an email (${toCall.length} new lookup${toCall.length===1?'':'s'}, ${need.length-toCall.length} cached)…`,'wn');
+    const hw=async()=>{
+      while(i<need.length){
+        const dom=need[i++];
+        if(cache[dom]===undefined){
+          calls++;
+          try{const r=await fetch('/.netlify/functions/hunter',{method:'POST',body:JSON.stringify({domain:dom,hunterKey:localStorage.getItem('pp_Hunter')||undefined})});const d=await r.json();cache[dom]=Array.isArray(d.emails)?d.emails:[];if(d.skipped&&/no Hunter key/.test(d.reason||''))cache.__noKey=true;}catch(e){cache[dom]=[];}
+          await new Promise(r=>setTimeout(r,220));
+        }
+        const em=(cache[dom]||[]);
+        if(em.length){found++;LEADS.filter(l=>domainOf(l.website)===dom&&!emailsOf(l).length).forEach(l=>{l.emails=[...new Set([...emailsOf(l),...em])].join('; ');});}
+      }
+    };
+    await Promise.all([hw(),hw()]);
+    if(cache.__noKey)log('Hunter.io: no key configured — set HUNTER_KEY env var (or paste it in ⚙ Settings) to fill email-less domains. Skipped.','wn');
+    else if(need.length)log(`Hunter.io: ${calls} live lookup(s) this sweep, found emails for ${found} domain(s). (Metered — one call per domain, cached.)`,found?'ok':'wn');
+    if(found){scrubChainEmails();propagateFirmData();const m2=dedupeLeadsByIdentity();if(m2)log(`Merged ${m2} more row(s) after Hunter filled their email.`,'ok');}
+  }
+  // ═══ ONE chain verdict per COMPANY, decided here AFTER all merging (BUG-3/4 fix). Hard evidence deletes;
+  //     a name match only flags SUSPECTED CHAIN and stays in the grid; SAIF members immune from name flags. ═══
+  scrubChainEmails();
+  {const nm=mergeByNameArea(); if(nm)log(`Same-firm name+area merge: collapsed ${nm} row(s) (e.g. a firm with two domains) into one counterparty.`,'ok');}
+  // AUTO-DETECT group domains (a NON-generic, NON-host domain shared by ≥2 GENUINELY-DIFFERENT firms across
+  // ≥2 areas). This is a MERGE + REVIEW signal, NOT an exclusion: a multi-brand INDEPENDENT (West & Coe,
+  // Hunnaball) collapses to one counterparty per area and is KEPT; a real consolidator is only excluded once
+  // YOU promote its domain to the blocklist. Members are merged, brands retained, and the domain logged.
+  const groups=detectGroupDomains(); const groupSet=new Set(groups.map(g=>g.domain));
+  const gm=mergeGroupBrands(groupSet);
+  if(groups.length){
+    log(`🔎 Shared-domain groups detected: ${groups.length} domain(s) used by several distinct firms across several areas — MERGED to one counterparty per area (brands kept as trading names), KEPT, and logged for REVIEW. Promote a domain to the consolidator blocklist if it's actually a chain to exclude it:`,'wn');
+    groups.slice(0,15).forEach(g=>log(`    ${g.domain} — ${g.companies} distinct firms across ${g.areas} areas${isChainDomain(g.domain)?' (already on blocklist → excluded)':' (kept — multi-brand independent unless you blocklist it)'}`,'wn'));
+    window.__detectedGroups=groups;
+  }
+  if(gm)log(`Multi-brand merge: collapsed ${gm} brand row(s) into their group counterparty.`,'ok');
+  const cv=applyChainVerdicts(window.__lastCtx);
+  const trigStr=Object.entries(cv.byTrigger).map(([k,n])=>`${k} ${n}`).join(' · ')||'none';
+  log(`Chain verdict (per company, after merge): EXCLUDED ${cv.excluded} on HARD evidence [${trigStr}]; FLAGGED ${cv.flagged} as SUSPECTED CHAIN by name only (kept in grid for you to judge).`,cv.excluded?'wn':'ok');
+  if(cv.saifOverridden)log(`  ⚠ ${cv.saifOverridden} of those were SAIF/independent-sourced — logged above; verify the source data.`,'er');
+  if(cv.newlyConfirmed)log(`  📌 ${cv.newlyConfirmed} firm(s) newly proven chain-owned this run — added to the confirmed-chain registry so future cheap runs inherit it (review/edit in ⚙ Settings).`,'ok');
+  // SUPERSEDED-DUPLICATE cleanup (BUG-4): a row dropped at ROW level (irrelevant / wrong-category / out-of-area
+  // on one district's listing) whose COMPANY nonetheless SURVIVED via another listing is a merged duplicate,
+  // NOT an omission. Remove those from DROPPED so they don't inflate the excluded count or put a firm in both
+  // lists. (Genuine chain exclusions never collide with a kept row — the company is deleted as a whole.)
+  {const keptKey=new Set(LEADS.map(l=>normTxt(l.name)+'|'+(l.area||'')));
+   const superseded=DROPPED.filter(d=>keptKey.has(normTxt(d.name)+'|'+(d.area||'')));
+   if(superseded.length){DROPPED=DROPPED.filter(d=>!keptKey.has(normTxt(d.name)+'|'+(d.area||'')));EXCLUDED=DROPPED.length;log(`${superseded.length} row-level drop(s) were SUPERSEDED — the company survived via another listing/source; reclassified as merged duplicates, not omissions.`,'wn');}}
+  // ASSERTION: after that cleanup a company must never be in both lists. If it is, something is genuinely wrong.
+  {const kept=new Set(LEADS.map(l=>normTxt(l.name)+'|'+(l.area||''))); const both=DROPPED.filter(d=>kept.has(normTxt(d.name)+'|'+(d.area||''))); if(both.length)log(`❌ ASSERTION FAILED — ${both.length} firm(s) still in BOTH lists: ${both.slice(0,5).map(d=>d.name).join('; ')}. Report this.`,'er'); else log('✓ No company appears in both the kept and excluded lists.','ok');}
+  {const rl=relabelMergedRows(); if(rl)log(`Parent-name relabel: ${rl} merged counterparty(ies) re-labelled with the owner name (trading brands kept in the ⑃ tooltip for outreach).`,'ok');}
+  // Re-fold register supply now that enrichment has added websites/emails (may resolve more register↔discovery
+  // matches). Idempotent — already-matched firms aren't re-added. Then report the final source split.
+  {const c=(window.__lastCtx||{}); const rs=foldInRegister(c.catKey||detectCategory(c.term||($('term').value||'')),c.catLabel||c.term||$('term').value||'');
+   if(rs.loaded)log(`SUPPLY SPLIT (final) — register-verified ${rs.registerOnly+rs.both}, discovery-only ${rs.discoveryOnly}, in BOTH ${rs.both}. Register firms carry their SAIF_MEMBER flag to export.`,'ok');}
+  $('bar').style.width='100%';render();setStats();
+  const ars=LEADS.filter(l=>!l.planAR&&l.regStatus&&/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU|SUBSIDIARY/i.test(l.regStatus));
+  if(ars.length){
+    log(`⚠ NOT INDEPENDENT — ${ars.length} firm(s) disclose tied/restricted status in their own site small print:`,'er');
+    ars.forEach(a=>log(`  ${a.name} — ${a.regStatus}`,'er'));
+    log('These are flagged, NOT deleted. Sort by the "Regulatory" column and cut them yourself.','wn');
+  }
+  const frns=LEADS.filter(l=>l.frn).length;
+  log(`Enrichment complete — ${LEADS.filter(l=>l.emails).length} with email, ${LEADS.filter(l=>l.contact).length} with a named contact${frns?`, ${frns} with an FCA number scraped from their site`:''}.`,'ok');
+  reportSlots('Distinct companies (sellable slots) by area, post-enrich');
+  running=false;$('run').disabled=false;setStats();
+}
+
+let sortKey='reviews',sortDir=-1;
+function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='name'||k==='district'?1:-1;}render();}
+function render(){
+  if(!LEADS.length){$('results').innerHTML='<div class="empty"><b>No kept leads yet</b>Adjust rules or run a sweep.</div>';return;}
+  const rows=[...LEADS].sort((a,b)=>{
+    if(sortKey==='alPriority')return (rankVal(a)-rankVal(b))*sortDir;
+    const x=a[sortKey]??'',y=b[sortKey]??'';return (x>y?1:x<y?-1:0)*sortDir;});
+  const cols=['alPriority|#','name|Business','source|Supply','saifMember|SAIF','sources|Sources','alVerdict|AfterLife','alFit|Fit','alQuality|Qual','area|Area','district|District','address|Address','rating|★','reviews|Reviews','phone|Phone','website|Web','emails|Email','contact|Contact','register|Register','aiType|AI verdict','regStatus|Regulatory','regstatus|Register status','independent|Indep.','companyNo|Co. No.'];
+  let h='<table><thead><tr><th title="Tick to publish this lead">✓</th>'+cols.map(c=>{const[k,t]=c.split('|');return `<th onclick="sortBy('${k}')">${t}${sortKey===k?(sortDir>0?' ▲':' ▼'):''}</th>`;}).join('')+'</tr></thead><tbody>';
+  const alClass=v=>v==='APPROVE'?'t-ind':v==='EXCLUDE'?'t-chain':'t-q';
+  const q=s=>(s||'').replace(/"/g,'&quot;');
+  const srcTag=s=>`<span class="tagx ${s==='google'?'t-en':'t-ind'}" style="margin:0 2px 2px 0">${s}</span>`;
+  for(const l of rows){
+    if(!l._uid)l._uid='u'+(++UID);
+    h+=`<tr style="${l.alVerdict==='EXCLUDE'?'opacity:.55':''}">
+    <td style="text-align:center"><input type="checkbox" ${l.alSelect?'checked':''} title="${l.alVerdict==='EXCLUDE'?'Excluded by vetting — tick only if you deliberately want to publish it':'Publish this lead'}" onchange="toggleSelect('${l._uid}',this.checked)"></td>
+    <td class="b">${l.alPriority??''}</td>
+    <td class="b">${l.name}${l.enriched?' <span class="tagx t-en">E</span>':''}${l.suspectedChain?` <span class="tagx t-chain" title="SUSPECTED CHAIN — name matched pattern '${q(l.suspectPattern)}' but NO hard evidence (chain domain / PSC / ownership disclosure). Kept for you to judge, not excluded.">⚑ suspected chain</span>`:''}${l.branchDup?` <span class="tagx t-q" title="One company, ${l.branchCount} branches in ${l.area} — merged to a single slot/contact. Branches: ${((l.branches&&l.branches.length?l.branches.map(b=>b.address||b.postcode):l.branchPCs)||[]).filter(Boolean).join(' | ').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">⑃ ${l.branchCount} branches</span>`:''}${(l.tradingBrands&&l.tradingBrands.length)?` <span class="tagx t-ind" title="Owner: ${q(l.name)}. Also trades as: ${q(l.tradingBrands.join(' · '))}">also: ${l.tradingBrands.length} trading name(s)</span>`:''}</td>
+    <td>${(function(s){s=s||'discovery';var c=s==='both'?'t-ind':s==='register'?'t-q':'t-en';return `<span class="tagx ${c}" title="${s==='both'?'In BOTH the register and discovery':s==='register'?'Register-verified (Email Lead Generator) — not found by discovery':'Discovery only — not on the register'}">${s}</span>`;})(l.source)}</td>
+    <td style="text-align:center">${(/^(y|yes|true|1)$/i.test(String(l.saifMember||'')))?'<span class="tagx t-ind" title="SAIF member (register)">SAIF</span>':''}</td>
+    <td style="max-width:150px">${(l.sources||[]).map(srcTag).join('')}</td>
+    <td>${l.alVerdict?`<span class="tagx ${alClass(l.alVerdict)}" title="${q(l.alNotes)}">${l.alVerdict}</span>`:''}${l.alDescription?` <span class="tagx t-en" title="${q(l.alDescription)}">✎ copy</span>`:''}</td>
+    <td>${l.alFit??''}</td><td>${l.alQuality??''}</td>
+    <td class="b" title="${(l.foundAreas&&l.foundAreas.length>1)?'Found while sweeping: '+l.foundAreas.join(', '):''}">${l.area||''}${(l.foundAreas&&l.foundAreas.length>1)?' <span class="muted" style="font-size:11px">+'+(l.foundAreas.length-1)+'</span>':''}</td>
+    <td class="muted">${l.district}</td>
+    <td style="max-width:220px">${l.address||''}</td>
+    <td>${l.rating??''}</td><td>${l.reviews||''}</td><td>${l.phone||''}</td>
+    <td>${l.website?`<a href="${l.website}" target="_blank">site</a>`:''}</td>
+    <td>${l.emails||(l.enriched?`<span class="muted" style="font-size:13px">${l.enrichNote||'none found'}</span>`:'')}</td><td>${l.contact||''}</td>
+    <td>${l.register?`<span class="tagx t-ind">${l.register}</span>`:''}</td>
+    <td>${l.aiType?`<span class="tagx ${l.aiType==='NOT INDEPENDENT'?'t-chain':'t-ind'}" title="${(l.aiReason||'').replace(/"/g,'')}">${l.aiType}</span>`:''}</td>
+    <td>${l.regStatus?`<span class="tagx ${l.planAR?'t-q':'t-chain'}" title="${l.planAR?'Appointed representative of a funeral-plan provider — required since 2022, neutral for independence':''}">${l.regStatus}</span>`:''}</td>
+    <td>${(()=>{const v=l.fca||l.reg;if(!v)return '';
+      const good=/^IFA|outstanding|good|hygiene [45]|WASTE CARRIER ✓|REGISTERED CHARITY/i.test(v);
+      const unknown=/unreadable|verify manually|VERIFY ON SRA|not checked/i.test(v);
+      const cls=good?'t-ind':(unknown?'t-q':'t-chain');
+      const url=l.regUrl||l.fcaUrl||'';
+      return url?`<a href="${url}" target="_blank"><span class="tagx ${cls}">${v}</span></a>`:`<span class="tagx ${cls}">${v}</span>`;})()}</td>
+    <td>${l.independent.startsWith('N')?'<span class="tagx t-chain">chain</span>':l.independent==='Y'?'<span class="tagx t-ind">indep</span>':'<span class="tagx t-q">'+l.independent+'</span>'}</td>
+    <td class="muted">${l.companyNo||''}</td></tr>`;
+  }
+  $('results').innerHTML=h+'</tbody></table>';
+}
+/* ---------- why was X excluded? ---------- */
+function showDropped(){
+  if(!DROPPED.length){log('Nothing was excluded in the last sweep.','wn');return;}
+  const by={};DROPPED.forEach(d=>{(by[d.reason]=by[d.reason]||[]).push(d);});
+  log('EXCLUDED IN LAST SWEEP — '+DROPPED.length+' total:','wn');
+  Object.entries(by).forEach(([reason,items])=>{
+    const why={'excluded-name':'matched your omit list / chains blocklist','out-of-area':'postcode outside the searched area',
+      'chain-domain':'website is a national chain (funeralpartners / dignity / cpjfield / consolidator)',
+      'chain-email':'email address is a national chain — a chain branch, not an independent',
+      'chain-owned':'Companies House parent / PSC is a consolidator',
+      'ownership-disclosure':"the firm's own site discloses group ownership (part of / subsidiary of X)",
+      'wrong-category':'a different trade to the one you searched (e.g. crematorium/cemetery, not a funeral director)',
+      'chain-brand':"the name is a consolidator's exact canonical brand (e.g. Co-op Funeralcare, Dignity Funerals)",
+      'confirmed-chain':'on the confirmed-chain registry — ownership proven by a previous run / the register work',
+      'group-domain':'auto-detected group: this email/website domain is shared by several distinct companies across several areas',
+      'irrelevant':'did not match the category (wrong business type)','reviews':'below your minimum review count',
+      'rating':'below your minimum rating','no-web':'no website on record (you required one)',
+      'no-phone':'no phone on record (you required one)','closed':'not operational'}[reason]||reason;
+    log(`  ${reason.toUpperCase()} (${items.length}) — ${why}:\n    `+items.slice(0,40).map(i=>i.name+(i.district?' ['+i.district+']':'')+(i.pattern?` — trigger: ${i.pattern}`:'')+(i.sources?` (via ${i.sources})`:'')).join('\n    '),'er');
+  });
+  const susp=LEADS.filter(l=>l.suspectedChain);
+  if(susp.length)log(`SUSPECTED CHAIN (name only, KEPT for you to judge — not excluded) (${susp.length}):\n    `+susp.slice(0,40).map(l=>l.name+(l.area?' ['+l.area+']':'')+` — pattern: ${l.suspectPattern}`).join('\n    '),'wn');
+  log('Chain exclusions now require HARD evidence (chain domain / PSC / ownership disclosure). A name match only flags SUSPECTED CHAIN and stays in the grid. Merged duplicates are NOT here — they are counted separately in the sweep log.','wn');
+}
+// Per-company provenance: every row that fed a company, its source, and (if excluded) the exact trigger.
+function whyCompany(name){
+  const q=normTxt(name);
+  const l=LEADS.find(x=>normTxt(x.name).includes(q));
+  const d=DROPPED.find(x=>normTxt(x.name).includes(q));
+  const target=l||d; if(!target){log(`No company matching "${name}" in kept or excluded lists.`,'wn');return;}
+  const status=l?(l.suspectedChain?'KEPT (SUSPECTED CHAIN — name flag only)':'KEPT (independent)'):`EXCLUDED — ${d.reason}${d.pattern?' ('+d.pattern+')':''}`;
+  log(`COMPANY: ${target.name} [${target.area||target.district||'?'}] — ${status}`,l?(l.suspectedChain?'wn':'ok'):'er');
+  log(`  sources: ${(target.sources||[]).join('+')||'?'} · ${(target.branches||[]).length} contributing row(s):`,'wn');
+  (target.branches||[]).forEach(b=>log(`    • ${b.name||target.name} [${b.postcode||'?'}] via ${(b.sources||[]).join('+')||'?'} — ${b.address||''}`.slice(0,160),'wn'));
+}
+function findLead(name){
+  const q=normTxt(name);
+  const hit=LEADS.find(l=>normTxt(l.name).includes(q));
+  if(hit){log(`FOUND in kept leads: ${hit.name} [${hit.district}] ${hit.phone} ${hit.website||''}${hit.suspectedChain?' — ⚑ SUSPECTED CHAIN (name flag: '+hit.suspectPattern+')':''}`,hit.suspectedChain?'wn':'ok');whyCompany(hit.name);return;}
+  const drop=DROPPED.find(d=>normTxt(d.name).includes(q));
+  if(drop){log(`EXCLUDED: ${drop.name} [${drop.district}] — rule: ${drop.reason}${drop.pattern?', trigger: '+drop.pattern:''}. Sources: ${drop.sources||'?'}. Address: ${drop.address}`,'er');return;}
+  log(`"${name}" was not returned by Google at all in this sweep — it may not be listed under that name, may sit outside the districts tiled, or Google may class it differently. Try town mode or a broader search term.`,'wn');
+}
+
+/* ---------- AI CLASSIFICATION: Claude judges every result ---------- */
+async function aiClassify(request){
+  const batches=[];
+  for(let i=0;i<LEADS.length;i+=25)batches.push(LEADS.slice(i,i+25));
+  log(`AI classifier: Claude is judging all ${LEADS.length} results (what each business ACTUALLY is)…`,'wn');
+  let idx=0, rejected=[];
+  for(const batch of batches){
+    try{
+      const r=await fetch('/.netlify/functions/classify',{method:'POST',body:JSON.stringify({
+        request, items:batch.map(l=>({name:l.name,types:l.types,website:l.website,address:l.address})),
+        anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+      const d=await r.json();
+      if(d.skipped){log('AI classifier unavailable'+(d.error?' ('+d.error+')':' — no Anthropic key')+'. Results NOT classified.','er');return;}
+      (d.verdicts||[]).forEach(v=>{
+        const l=batch[v.i];
+        if(!l)return;
+        l.aiType=v.type||''; l.aiReason=v.reason||''; l.aiKeep=v.keep!==false;
+        // trade-body directory listing (SAIF/NAFD/…) is category-clean by definition — never let
+        // the name-based classifier bin it; keep it and let Vet & Rank make the real call.
+        if(!l.aiKeep&&l.memberships){l.aiKeep=true;l.aiReason=(l.aiReason?l.aiReason+' — ':'')+'kept: '+l.memberships+' member';}
+        if(!l.aiKeep)rejected.push(l);
+      });
+    }catch(e){log('AI classify batch failed — '+e.message,'er');}
+    idx+=batch.length;
+    $('bar').style.width=Math.round(idx/LEADS.length*100)+'%';
+  }
+  if(rejected.length){
+    const by={};rejected.forEach(l=>{(by[l.aiType||'rejected']=by[l.aiType||'rejected']||[]).push(l.name);});
+    log(`AI classifier REJECTED ${rejected.length} — wrong business type for "${request.slice(0,40)}":`,'er');
+    Object.entries(by).sort((a,b)=>b[1].length-a[1].length).forEach(([t,names])=>
+      log(`  ${t} (${names.length}): ${names.slice(0,10).join('; ')}`,'er'));
+    LEADS=LEADS.filter(l=>l.aiKeep!==false);
+    DROPPED.push(...rejected.map(l=>({name:l.name,reason:'ai:'+(l.aiType||'wrong type'),district:l.district,address:l.address})));
+    EXCLUDED+=rejected.length;
+  }
+  const kept={};LEADS.forEach(l=>{if(l.aiType)(kept[l.aiType]=kept[l.aiType]||[]).push(l.name);});
+  log(`AI classifier KEPT ${LEADS.length}: `+Object.entries(kept).map(([t,n])=>`${t} (${n.length})`).join(', '),'ok');
+  render();setStats();
+}
+/* ---------- VET & RANK: the AfterLife acceptance gate ---------- */
+const VERDICT_ORDER={APPROVE:0,REVIEW:1,'CHECK-PSC':2,RESERVE:3,EXCLUDE:9};
+let AL_BATCH_ID='';
+function currentCategory(){const t=($('term').value||'').split('\n')[0].trim();return {label:t,slug:normTxt(t).slice(0,40)||'supplier'};}
+/* ---------- AfterLife canonical category picker ----------
+   Leads MUST publish under one of the marketplace's exact category ids, or the
+   family-facing box greys out (nothing matches the query). We no longer derive a
+   slug from the free-text term (that produced "funeraldirectors"/"bereavementcounsellors"
+   which match no category); the operator confirms the canonical id, auto-guessed. */
+const AL_CATEGORIES=[
+  {id:"funeral-directors",label:"Funeral directors (full service)"},
+  {id:"direct-cremation",label:"Direct cremation specialists"},
+  {id:"woodland-burial",label:"Natural & woodland burial grounds"},
+  {id:"private-cemeteries",label:"Private cemeteries"},
+  {id:"private-crematoria",label:"Private crematoria"},
+  {id:"repatriation",label:"Repatriation specialists"},
+  {id:"embalming",label:"Embalming specialists"},
+  {id:"coffins",label:"Custom coffin makers"},
+  {id:"celebrants",label:"Celebrants"},
+  {id:"musicians",label:"Funeral musicians"},
+  {id:"catering",label:"Funeral catering & wakes"},
+  {id:"photo",label:"Funeral photographers"},
+  {id:"livestream",label:"Funeral videographers & livestream"},
+  {id:"print",label:"Order-of-service printers"},
+  {id:"venues",label:"Wake venues"},
+  {id:"transport",label:"Funeral transport"},
+  {id:"florists",label:"Florists"},
+  {id:"stonemasons",label:"Memorial masons & stonemasons"},
+  {id:"memorial-jewellery",label:"Memorial jewellery & cremation art"},
+  {id:"ash-scattering",label:"Ash scattering services"},
+  {id:"memorial-benches",label:"Memorial benches, trees & plaques"},
+  {id:"probate",label:"Probate solicitors"},
+  {id:"conveyancing",label:"Conveyancing solicitors"},
+  {id:"probate-accountants",label:"Probate accountants"},
+  {id:"surveyors",label:"RICS chartered surveyors"},
+  {id:"estate-clearance",label:"Estate clearance specialists"},
+  {id:"house-clearance",label:"House clearance, removals & storage"},
+  {id:"auction-houses",label:"Auction houses"},
+  {id:"garden",label:"Garden maintenance (void property)"},
+  {id:"locksmiths",label:"Locksmiths (securing property)"},
+  {id:"property",label:"Property security & insurance"},
+  {id:"will-writers",label:"Will writers & LPA drafters"},
+  {id:"wills-storage",label:"Wills storage services"},
+  {id:"genealogists",label:"Probate genealogists"},
+  {id:"iht-planning",label:"IHT planning & trust services"},
+  {id:"pension-ifa",label:"Bereavement & pension IFAs"},
+  {id:"life-insurance",label:"Life insurance brokers"},
+  {id:"equity-release",label:"Equity release advisers"},
+  {id:"home-care",label:"Home care agencies"},
+  {id:"live-in-care",label:"Domiciliary & live-in care"},
+  {id:"care-placement",label:"Care home placement consultants"},
+  {id:"grief",label:"Private bereavement counsellors"},
+  {id:"childrens-bereavement",label:"Children's bereavement specialists"},
+  {id:"kennels",label:"Kennels & catteries"},
+  {id:"pets",label:"Pet rehoming agencies"}
+];
+let pubCategoryTouched=false;
+// Ordered, specific-before-generic. First hit wins.
+const CAT_RULES=[
+  [/direct cremation/,'direct-cremation'],
+  [/funeral musician|organist|bagpipe|\bpiper\b|soloist/,'musicians'],
+  [/cater|buffet|wake food/,'catering'],
+  [/photograph/,'photo'],
+  [/videograph|livestream|live stream|webcast/,'livestream'],
+  [/hearse|limousine|funeral car|funeral transport/,'transport'],
+  [/order of service|order-of-service|service sheet|printer|printing/,'print'],
+  [/wake venue|function room|reception venue|venue/,'venues'],
+  [/celebrant|officiant/,'celebrants'],
+  [/florist|flower/,'florists'],
+  [/stonemason|memorial mason|monumental mason|headstone|gravestone/,'stonemasons'],
+  [/memorial jewel|cremation art|keepsake jewel|ashes into/,'memorial-jewellery'],
+  [/ash scatter|scatter.*ash|scattering/,'ash-scattering'],
+  [/memorial bench|memorial tree|memorial plaque|dedication bench/,'memorial-benches'],
+  [/child.*bereavement|children.*grief|young.*bereavement/,'childrens-bereavement'],
+  [/bereavement counsel|grief counsel|grief therap|bereavement support|bereavement service|counsell?or|counsell?ing/,'grief'],
+  [/equity release|lifetime mortgage|later life mortgage/,'equity-release'],
+  [/life insurance|protection advis|income protection/,'life-insurance'],
+  [/\biht\b|inheritance tax|trust service|trust practitioner/,'iht-planning'],
+  [/\bifas?\b|independent financial|financial advis|pension advis|wealth manage|financial planner/,'pension-ifa'],
+  [/will.*storage|storage.*will|will safe/,'wills-storage'],
+  [/will writ|will-writ|\bwills?\b|\blpas?\b|lasting power|power of attorney/,'will-writers'],
+  [/probate account/,'probate-accountants'],
+  [/genealog|heir hunter|missing beneficiar|probate research/,'genealogists'],
+  [/probate|estate administration|contentious probate/,'probate'],
+  [/conveyanc/,'conveyancing'],
+  [/surveyor|\brics\b|valuation/,'surveyors'],
+  [/estate clearance|probate clearance/,'estate-clearance'],
+  [/house clearance|removals|man and van|removal firm/,'house-clearance'],
+  [/repatriat/,'repatriation'],
+  [/embalm/,'embalming'],
+  [/coffin|casket/,'coffins'],
+  [/woodland burial|natural burial|green burial/,'woodland-burial'],
+  [/private cemeter|burial ground/,'private-cemeteries'],
+  [/crematori/,'private-crematoria'],
+  [/live.?in care|24.?hour care/,'live-in-care'],
+  [/home care|domiciliary|care at home|home help/,'home-care'],
+  [/care.*placement|care home consult|care home advis|care advisor|care advisory/,'care-placement'],
+  [/locksmith/,'locksmiths'],
+  [/kennel|cattery|dog boarding|pet boarding/,'kennels'],
+  [/pet rehom|pet charity|rehome.*pet|pet fostering/,'pets'],
+  [/auction/,'auction-houses'],
+  [/garden maint|grounds maint|lawn|garden care/,'garden'],
+  [/property secur|property insur|void property|vacant property|home insur/,'property'],
+  [/funeral director|undertaker|funeral home|funeral service|\bfuneral\b/,'funeral-directors']
+];
+function guessCanonicalCategory(term){
+  const t=(term||'').toLowerCase();
+  if(!t)return '';
+  for(const[re,id]of CAT_RULES)if(re.test(t))return id;
+  // fallback: token overlap against ids + labels
+  const toks=t.split(/[^a-z0-9]+/).filter(w=>w.length>3);
+  let best='',score=0;
+  for(const c of AL_CATEGORIES){const hay=(c.id+' '+c.label).toLowerCase();let s=0;toks.forEach(w=>{if(hay.includes(w))s++;});if(s>score){score=s;best=c.id;}}
+  return score?best:'';
+}
+function initCategoryPicker(){
+  const sel=$('pubCategory');if(!sel)return;
+  if(!sel.options.length){
+    sel.innerHTML='<option value="">— choose the marketplace category —</option>'+
+      AL_CATEGORIES.slice().sort((a,b)=>a.label.localeCompare(b.label)).map(c=>`<option value="${c.id}">${c.label} · ${c.id}</option>`).join('');
+  }
+  refreshCategoryGuess();
+}
+function refreshCategoryGuess(){
+  const sel=$('pubCategory');if(!sel||pubCategoryTouched)return;
+  const term=($('term').value||'').split('\n')[0].trim();
+  const g=guessCanonicalCategory(term);
+  sel.value=g||'';
+  const hint=$('pubCatHint');
+  if(hint)hint.textContent=g?`Auto-matched “${term}” → ${g}. Change it if that's wrong.`:(term?`Couldn't auto-match “${term}” — pick the category manually.`:'Set your request above and this auto-fills.');
+}
+function alScore(l){return (+l.alFit||0)*2+(+l.alQuality||0);}
+function rankVal(l){return l.alVerdict==='EXCLUDE'?1e6:(typeof l.alPriority==='number'?l.alPriority:99999);}
+/* ---------- publish SELECTION: allocation target + manual override ---------- */
+let UID=0;
+function pubTargetN(){return Math.max(0,Math.min(500,parseInt(($('pubTarget')||{}).value,10)||0));}
+// Pre-select the top-N ranked leads to fill the area's allocation. EXCLUDE leads
+// (group-owned / wrong-trade red flags) are never auto-selected — they can only
+// be added by a deliberate tick. Everything else fills the slots best-first.
+function autoSelectTop(n){
+  LEADS.forEach(l=>{l.alSelect=false;});
+  LEADS.filter(l=>l.alVerdict&&l.alVerdict!=='EXCLUDE')
+       .sort((a,b)=>rankVal(a)-rankVal(b))
+       .slice(0,Math.max(0,n))
+       .forEach(l=>{l.alSelect=true;});
+}
+function toggleSelect(uid,checked){const l=LEADS.find(x=>x._uid===uid);if(l)l.alSelect=!!checked;updateSelCount();}
+function applyTarget(){
+  const n=pubTargetN();const e=$('pubTargetEcho');if(e)e.textContent=n;
+  if(!LEADS.some(l=>l.alVerdict)){updateSelCount();return;} // nothing vetted yet
+  autoSelectTop(n);render();updateSelCount();
+}
+function updateSelCount(){
+  const sel=LEADS.filter(l=>l.alSelect).length;
+  const exSel=LEADS.filter(l=>l.alSelect&&l.alVerdict==='EXCLUDE').length;
+  const sc=$('selCount');
+  if(sc){
+    if(!LEADS.some(l=>l.alVerdict))sc.textContent='Nothing is pre-selected. After Vet & Rank, tick the suppliers you want in the ✓ column — the count you pick shows here.';
+    else sc.innerHTML=sel?`You picked <b>${sel}</b> — these will be published.`+(exSel?` <span class="er">${exSel} of them were EXCLUDED by vetting.</span>`:''):'None picked yet — tick the suppliers you want in the ✓ column.';
+  }
+  const pb=$('publishBtn');if(pb){pb.disabled=!sel||running;pb.textContent=`▲ Publish ${sel||''} selected to AfterLife`.replace(/\s{2,}/g,' ');}
+}
+function rankLeads(){
+  const d=new Date(),pad=n=>String(n).padStart(2,'0');
+  AL_BATCH_ID=`AL-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+  LEADS.sort((a,b)=>{const va=VERDICT_ORDER[a.alVerdict]??5,vb=VERDICT_ORDER[b.alVerdict]??5;return va!==vb?va-vb:alScore(b)-alScore(a);});
+  let p=0;
+  LEADS.forEach(l=>{
+    l.alBatch=AL_BATCH_ID;
+    if(l.alVerdict==='EXCLUDE'){l.alPriority='-';l.alStatus='excluded';}
+    else{l.alPriority=++p;l.alStatus=l.alVerdict==='APPROVE'?'invited':'pipeline';}
+  });
+  sortKey='alPriority';sortDir=1;
+}
+async function vetRank(){
+  if(MODE!=='functions'){log('Vet & Rank needs the Netlify deployment (functions offline).','er');return;}
+  if(!LEADS.length){log('Run a sweep first — Vet & Rank scores the surviving leads.','er');return;}
+  if(running)return;
+  running=true;$('run').disabled=true;$('vetBtn').disabled=true;setStats();
+  const blocklist=parseConsolidators();
+  const request=($('term').value||'').split('\n').join(' ').slice(0,400);
+  const noSite=LEADS.filter(l=>!l.siteText).length;
+  if(noSite)log(`Vet & Rank: ${noSite} of ${LEADS.length} lead(s) have no crawled site text — run ✦ Enrich first for the fullest independence read. Proceeding on available evidence.`,'wn');
+  log(`Vet & Rank: Claude is assessing ${LEADS.length} leads — independence · bereavement fit · quality · verdict (blocklist has ${blocklist.length} consolidators)…`,'wn');
+  // BUG-1 FIX: smaller batches (12, was 25) so the Claude call fits the function budget; read the response
+  // as TEXT then JSON.parse in a try/catch (so a timeout HTML page / truncated body doesn't crash the run,
+  // and we can LOG the real body); retry with backoff; a batch that keeps failing leaves its leads UNVETTED
+  // (still in the grid) instead of aborting the whole ranking.
+  const BATCH_SZ=12;
+  const batches=[];for(let i=0;i<LEADS.length;i+=BATCH_SZ)batches.push(LEADS.slice(i,i+BATCH_SZ));
+  let done=0,ok=false,failedBatches=0,noKey=false;
+  const callVet=async(batch)=>{
+    const res=await fetch('/.netlify/functions/vetrank',{method:'POST',body:JSON.stringify({
+      request,blocklist,
+      items:batch.map(l=>({name:l.name,website:l.website,address:l.address,rating:l.rating,reviews:l.reviews,
+        types:l.types,aiType:l.aiType,register:l.register,fca:l.fca,reg:l.reg,regStatus:l.regStatus,
+        memberships:l.memberships||'',sources:l.sources||[],planAR:!!l.planAR,planProvider:l.planProvider||'',
+        siteText:l.siteText||'',corporateOwners:l.corporateOwners||[]})),
+      anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+    const bodyText=await res.text();                       // read as TEXT first — never .json() blindly
+    let d; try{ d=JSON.parse(bodyText); }
+    catch(e){ throw new Error(`non-JSON response (HTTP ${res.status}) — first 300 chars: ${bodyText.slice(0,300).replace(/\s+/g,' ')}`); }
+    return d;
+  };
+  for(let bi=0;bi<batches.length;bi++){
+    const batch=batches[bi];
+    let d=null, lastErr='';
+    for(let attempt=1;attempt<=3&&!d;attempt++){
+      try{
+        d=await callVet(batch);
+        if(d.skipped&&/no.*key/i.test(d.error||d.reason||'')){noKey=true;d=null;break;}
+      }catch(e){
+        lastErr=e.message;
+        log(`Vet & Rank batch ${bi+1}/${batches.length} attempt ${attempt} failed — ${e.message}`,'wn');
+        if(attempt<3)await new Promise(r=>setTimeout(r,attempt*4000));   // backoff 4s, 8s
+      }
+    }
+    if(noKey){log('Vet & Rank unavailable — no Anthropic key. Add it in ⚙ Settings or as ANTHROPIC_API_KEY on Netlify.','er');break;}
+    if(!d){ failedBatches++; batch.forEach(l=>{l.alVerdict='UNVETTED';l.alNotes=('vetting failed: '+lastErr).slice(0,140);}); log(`  ✗ batch ${bi+1} left UNVETTED after 3 tries (${batch.length} lead(s)). Continuing.`,'er'); }
+    else { ok=true; (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;
+      l.alVerdict=v.verdict;l.alFit=v.fit;l.alQuality=v.quality;l.alNotes=v.reason||'';
+      l.alCredentials=v.credentials||'';l.alDescription=v.description||'';
+      l.alIndependent=v.independent;l.alGroupQuote=v.groupQuote||'';l.alPscParent=v.pscParent||'';}); }
+    done+=batch.length;$('bar').style.width=Math.round(done/LEADS.length*100)+'%';
+  }
+  if(failedBatches)log(`Vet & Rank: ${failedBatches} batch(es) could not be scored — those leads are marked UNVETTED (still in the grid). ${ok?'The rest are ranked below.':''}`,'wn');
+  $('bar').style.width='100%';
+  if(ok){
+    rankLeads();
+    LEADS.forEach(l=>{l.alSelect=false;});   // rank only — never pre-select; the operator picks
+    const by={};LEADS.forEach(l=>{if(l.alVerdict)(by[l.alVerdict]=by[l.alVerdict]||[]).push(l);});
+    const order=['APPROVE','REVIEW','CHECK-PSC','RESERVE','EXCLUDE'];
+    log('VET & RANK complete ('+AL_BATCH_ID+'):','ok');
+    order.forEach(v=>{const g=by[v];if(!g||!g.length)return;
+      log(`  ${v} (${g.length}): `+g.slice(0,8).map(l=>l.name+(v!=='EXCLUDE'?` [fit ${l.alFit}·q ${l.alQuality}]`:` — ${l.alNotes}`)).join('; '),v==='APPROVE'?'ok':v==='EXCLUDE'?'er':'wn');});
+    const chk=by['CHECK-PSC']||[];
+    if(chk.length){log(`⚑ ${chk.length} CHECK-PSC — corporate owner on Companies House, NOT auto-excluded. Confirm the parent yourself:`,'wn');
+      chk.forEach(l=>log(`  ${l.name} → parent: ${l.alPscParent||'?'}`,'wn'));}
+    const keepers=LEADS.filter(l=>l.alVerdict&&l.alVerdict!=='EXCLUDE').length;
+    reportSlots('SELLABLE SLOTS by area (distinct independent companies, chains excluded)',{excludeVerdict:true});
+    log(`Ranked ${keepers} keeper(s) (sorted best-first in the # column). Nothing is selected — YOU choose. Tick the ones you want in the ✓ column, then ▲ Publish selected: we'll write up each pick and send them to AfterLife. (Optional: "Select top N" pre-ticks the top N by our rank if you'd rather start from that.)`,'ok');
+  }
+  running=false;$('run').disabled=false;setStats();render();
+}
+/* ---------- shared Brevo row mapping (used by Brevo export + ranked CSV) ---------- */
+const BREVO_COLS=['EMAIL','FIRSTNAME','LASTNAME','COMPANY','SMS','WEBSITE','ADDRESS','POSTCODE','DISTRICT','POSTCODE_AREA','CATEGORY','RATING','REVIEWS','INDEPENDENT','REGISTER','FCA_STATUS','FRN','COMPANY_NUMBER'];
+function brevoRow(l){
+  const email=(l.emails||'').split(';')[0].trim();
+  const nm=(l.contact||'').trim().split(/\s+/).filter(Boolean);
+  let sms=(l.phone||'').replace(/[^0-9+]/g,'');
+  if(sms.startsWith('0'))sms='+44'+sms.slice(1);else if(sms&&!sms.startsWith('+'))sms='+'+sms;
+  const pc=((l.address||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)||[''])[0];
+  const term=($('term').value||'').split('\n')[0].trim();
+  return {EMAIL:email,FIRSTNAME:nm[0]||'',LASTNAME:nm.length>1?nm.slice(1).join(' '):'',COMPANY:l.name||'',SMS:sms,WEBSITE:l.website||'',
+    ADDRESS:l.address||'',POSTCODE:pc,DISTRICT:l.district||'',POSTCODE_AREA:l.area||'',CATEGORY:term,
+    RATING:l.rating??'',REVIEWS:l.reviews||'',INDEPENDENT:l.independent||'',REGISTER:l.register||'',
+    FCA_STATUS:l.fca||l.reg||'',FRN:l.frn||'',COMPANY_NUMBER:l.companyNo||''};
+}
+/* ---------- single ranked CSV: Brevo columns + AL_* ---------- */
+// Robust file download: some browsers ignore .click() on an anchor that isn't in
+// the document, so attach it, click, then clean up. Fixes "export does nothing".
+function dl(blob,filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;a.style.display='none';
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},1500);
+}
+function exportRanked(){
+  if(!LEADS.some(l=>l.alVerdict)){log('Run ⚖ Vet & Rank first — the ranked CSV needs verdicts.','er');return;}
+  const COLS=['AL_PRIORITY',...BREVO_COLS,'AL_VERDICT','AL_BATCH','AL_STATUS','AL_FIT','AL_QUALITY','AL_SOURCES','AL_NOTES','AL_DESCRIPTION'];
+  const ordered=[...LEADS].sort((a,b)=>rankVal(a)-rankVal(b));
+  const rows=ordered.map(l=>Object.assign({AL_PRIORITY:l.alPriority??'-'},brevoRow(l),{
+    AL_VERDICT:l.alVerdict||'',AL_BATCH:l.alBatch||AL_BATCH_ID,AL_STATUS:l.alStatus||'',
+    AL_FIT:l.alFit??'',AL_QUALITY:l.alQuality??'',AL_SOURCES:(l.sources||[]).join('+')+(l.memberships?(' ['+l.memberships+']'):''),
+    AL_NOTES:l.alNotes||'',AL_DESCRIPTION:l.alDescription||''}));
+  const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const csv=[COLS.join(','),...rows.map(r=>COLS.map(c=>esc(r[c]??'')).join(','))].join('\n');
+  dl(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}),`afterlife_ranked_${($('area').value||$('town').value||'leads')}_${Date.now()}.csv`);
+  const keep=LEADS.filter(l=>l.alVerdict&&l.alVerdict!=='EXCLUDE').length,exc=LEADS.filter(l=>l.alVerdict==='EXCLUDE').length;
+  log(`Ranked CSV exported — ${rows.length} rows (${keep} ranked keepers top-down, ${exc} excluded kept at the bottom with reasons).`,'ok');
+}
+/* ---------- publish APPROVE leads to AfterLife (token stays server-side) ---------- */
+async function publishAfterLife(){
+  if(MODE!=='functions'){log('Publish needs the Netlify deployment (functions offline).','er');return;}
+  const approve=LEADS.filter(l=>l.alSelect);
+  if(!approve.length){log('Nothing selected — tick the suppliers you want in the ✓ column, then Publish. (Nothing is pre-selected; you choose.)','er');return;}
+  if(running)return;
+  // Publish under the CANONICAL AfterLife category id, not a free-text slug —
+  // otherwise the marketplace box greys out because nothing matches the query.
+  const catId=($('pubCategory').value||'').trim();
+  if(!catId){log('Pick the AfterLife category first — the dropdown just above the allocation. It must match a marketplace category, or the leads will never appear.','er');const s=$('pubCategory');if(s)s.focus();return;}
+  const catLabel=(AL_CATEGORIES.find(c=>c.id===catId)||{}).label||catId;
+  const exSel=approve.filter(l=>l.alVerdict==='EXCLUDE').length;
+  if(!confirm(`Publish ${approve.length} selected lead(s) to afterlife.ltd as “${catLabel}” (${catId})?`+(exSel?`\n\n⚠ ${exSel} of these were EXCLUDED by vetting (group-owned / wrong trade). Publish anyway?`:'')+`\n\nThey arrive as “pending” for you to approve there. Phone & website are withheld (sent as null) — families only reach firms through AfterLife.`))return;
+  running=true;$('publishBtn').disabled=true;setStats();
+  // Write up the picks that don't already have marketplace copy (i.e. anything you
+  // chose that wasn't graded APPROVE). Claude writes each from its site facts.
+  const needCopy=approve.filter(l=>!(l.alDescription&&l.alDescription.trim()));
+  if(needCopy.length){
+    log(`Writing up ${needCopy.length} of your ${approve.length} pick(s) before sending…`,'wn');
+    const wbatches=[];for(let i=0;i<needCopy.length;i+=25)wbatches.push(needCopy.slice(i,i+25));
+    for(const batch of wbatches){
+      try{
+        const r=await fetch('/.netlify/functions/describe',{method:'POST',body:JSON.stringify({
+          request:($('term').value||'').split('\n').join(' ').slice(0,400),
+          items:batch.map(l=>({name:l.name,website:l.website,rating:l.rating,reviews:l.reviews,
+            credentials:l.alCredentials||'',memberships:l.memberships||'',register:l.register||'',siteText:l.siteText||''})),
+          anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+        const d=await r.json();
+        if(d.skipped){log('Write-up unavailable'+(d.error?' ('+d.error+')':'')+' — sending your picks with whatever copy exists; you can edit it in AfterLife.','wn');break;}
+        (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;if(v.description)l.alDescription=v.description;if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
+      }catch(e){log('Write-up batch failed — '+e.message+'. Sending with existing copy.','wn');}
+    }
+    render();
+  }
+  const town=($('town').value||'').trim();
+  // Consolidate the ticked rows into ONE AfterLife record PER FIRM. A firm ticked in several
+  // postcode areas is Regional/National on the marketplace, so it must publish ONCE with an
+  // `areas` array covering all of them — otherwise the same name → same slug → the records
+  // overwrite each other and the firm shows in only one area. Local firms (one area) stay single.
+  const firmGroupKey=l=>{const ch=(l.companyNo||'').toString().replace(/\s/g,'').toUpperCase();const dom=domainOf(l.website);const edom=emailDomOf({emails:l.emails});return ch?('c:'+ch):dom?('d:'+dom):edom?('m:'+edom):('n:'+nameKey(l.name));};
+  const groups=new Map();
+  approve.forEach(l=>{const k=firmGroupKey(l);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l);});
+  const tierFor=n=>n<=1?'Local':(n<=4?'Regional':'National');
+  const suppliers=[...groups.values()].map(g=>{
+    const primary=g.find(l=>l.alDescription&&l.alDescription.trim())||g.slice().sort((a,b)=>(a.alPriority||99)-(b.alPriority||99))[0]||g[0];
+    const areas=[...new Set(g.map(l=>(l.area||'').toUpperCase().replace(/[^A-Z]/g,'')).filter(Boolean))].sort();
+    const branches=[].concat(...g.map(l=>l.branches||[]));
+    return {name:primary.name,category:catId,categoryLabel:catLabel,
+      areas, area:areas[0]||'', tier:tierFor(areas.length),
+      district:primary.district||'',town,address:primary.address||'',website:primary.website||'',
+      credentials:(primary.alCredentials||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean),
+      description:primary.alDescription||'',priority:typeof primary.alPriority==='number'?primary.alPriority:99,
+      contactEmail:(primary.emails||'').split(';')[0].trim(),companyNo:primary.companyNo||'',
+      verified:[primary.register,primary.fca||primary.reg,primary.regStatus].filter(Boolean).join(' · '),
+      notes:[primary.alNotes,branches.length>1?('Branches: '+branches.map(b=>b.address||b.postcode).filter(Boolean).slice(0,12).join(' | ')):''].filter(Boolean).join(' — ')};
+  });
+  const multiArea=suppliers.filter(s=>s.areas.length>1);
+  if(multiArea.length)log(`${multiArea.length} multi-area firm(s) publishing as Regional/National with a full areas array: `+multiArea.slice(0,6).map(s=>`${s.name} [${s.areas.join(',')} → ${s.tier}]`).join('; '),'ok');
+  log(`Publishing ${suppliers.length} supplier record(s) to AfterLife${suppliers.length!==approve.length?` (${approve.length} ticked rows consolidated by firm)`:''}…`,'wn');
+  try{
+    const r=await fetch('/.netlify/functions/publish',{method:'POST',body:JSON.stringify({suppliers})});
+    const d=await r.json();
+    if(!d.ok){log('Publish failed — '+(d.error||'unknown error'),'er');}
+    else{
+      log(`✓ Published ${d.imported} of ${d.sent} selected lead(s) to AfterLife as “pending”. Approve them at afterlife.ltd/admin/suppliers.`,'ok');
+      if(d.errors&&d.errors.length)log(`  ${d.errors.length} record(s) reported an error on import: `+d.errors.slice(0,5).map(e=>(e.name||'?')+' ('+e.error+')').join('; '),'wn');
+    }
+  }catch(e){log('Publish error — '+e.message,'er');}
+  running=false;setStats();
+}
+/* ---------- AUTHORITY ROUTER: picks the right register from what you're searching for ---------- */
+const AUTHORITY=[
+  {re:/\bifas?\b|independent financial|financial advis|wealth manage|pension advis|equity release|life insurance|insurance broker|funeral plan/i,
+   reg:'fca', label:'FCA register', keepIf:v=>/^IFA/.test(v)},
+  {re:/home care|domiciliary|live[- ]?in care|care agency|care at home|carer/i,
+   reg:'cqc', label:'CQC', keepIf:v=>/outstanding|good|no rating/i.test(v)},
+  {re:/caterer|catering|wake venue|function room|pub|hotel|restaurant|buffet/i,
+   reg:'fsa', label:'FSA hygiene ratings', keepIf:v=>/hygiene [45]\/5|no rating/i.test(v)},
+  {re:/house clearance|estate clearance|probate clearance|waste|rubbish/i,
+   reg:'ea', label:'Environment Agency waste carriers', keepIf:v=>/WASTE CARRIER ✓/.test(v)},
+  {re:/charit|children.s bereavement|pet rehoming|rescue/i,
+   reg:'charity', label:'Charity Commission', keepIf:v=>/REGISTERED CHARITY/.test(v)},
+  {re:/solicitor|probate lawyer|conveyanc|contentious probate/i,
+   reg:'sra', label:'SRA (manual verify link)', keepIf:()=>true}
+];
+function pickAuthority(text){ for(const a of AUTHORITY) if(a.re.test(text)) return a; return null; }
+
+async function verifyRegister(){
+  if(MODE!=='functions'){log('Register verification needs the Netlify deployment (functions offline).','er');return;}
+  if(!LEADS.length){log('Run a sweep first.','er');return;}
+  if(running)return;
+  const reqText=$('term').value+' '+($('sic').value||'');
+  const auth=pickAuthority(reqText);
+  if(!auth){log('No official register governs this category (Tier 3 — e.g. florists, printers, photographers). Google Places IS the right source here; quality comes from the relevance filter and review thresholds, not a register.','wn');return;}
+  if(auth.reg==='fca'){return fcaVerify();}
+  running=true;$('run').disabled=true;
+  log(`Verifying ${LEADS.length} leads against ${auth.label}…`,'wn');
+  const queue=[...LEADS]; let done=0;
+  const worker=async()=>{
+    while(queue.length){
+      const l=queue.shift();
+      try{
+        const pc=((l.address||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)||[''])[0];
+        const r=await fetch('/.netlify/functions/registers',{method:'POST',body:JSON.stringify({register:auth.reg,name:l.name,postcode:pc,
+          cqcKey:localStorage.getItem('pp_CQC')||undefined,charityKey:localStorage.getItem('pp_Charity')||undefined})});
+        const d=await r.json();
+        l.reg=d.verdict||'?'; l.regUrl=d.url||''; l.regKeep=(d.keep!==false);
+      }catch(e){ l.reg='check failed'; l.regKeep=true; }
+      done++;
+      if(done%5===0){$('bar').style.width=Math.round(done/LEADS.length*100)+'%';render();}
+    }
+  };
+  await Promise.all([worker(),worker(),worker()]);
+  $('bar').style.width='100%';
+  const by={}; LEADS.forEach(p=>{if(p.reg)(by[p.reg]=by[p.reg]||[]).push(p.name);});
+  log(`${auth.label} verification complete — NOTHING REMOVED. Leads are flagged; sort by Register status and decide:`,'ok');
+  Object.entries(by).sort((a,b)=>b[1].length-a[1].length).forEach(([v,names])=>
+    log(`  ${v} (${names.length}): ${names.slice(0,10).join('; ')}`, /✓|good|outstanding|hygiene [45]|CHARITY|SRA/i.test(v)?'ok':'wn'));
+  render();setStats();running=false;$('run').disabled=false;
+}
+/* ---------- FCA permissions verification ---------- */
+async function fcaVerify(){
+  if(MODE!=='functions'){log('FCA verification needs the Netlify deployment (functions offline).','er');return;}
+  if(!LEADS.length){log('Run a sweep first.','er');return;}
+  if(running)return;
+  running=true;$('run').disabled=true;
+  log(`FCA register: verifying ${LEADS.length} leads by permissions (not by name)…`,'wn');
+  let done=0;
+  const queue=[...LEADS];
+  const worker=async()=>{
+    while(queue.length){
+      const l=queue.shift();
+      try{
+        const r=await fetch('/.netlify/functions/fca',{method:'POST',body:JSON.stringify({name:l.name,
+          fcaKey:localStorage.getItem('pp_FCA')||undefined,fcaEmail:localStorage.getItem('pp_FCAEmail')||undefined})});
+        const d=await r.json();
+        if(d.skipped){l.fca='(no FCA key)';}
+        else{l.fca=d.verdict||'?';l.frn=d.frn||l.frn||'';l.fcaUrl=d.registerUrl||'';}
+      }catch(e){l.fca='check failed';}
+      done++;
+      if(done%5===0){$('bar').style.width=Math.round(done/LEADS.length*100)+'%';render();}
+    }
+  };
+  await Promise.all([worker(),worker(),worker()]);
+  $('bar').style.width='100%';
+  const checked=LEADS.filter(l=>l.fca&&!l.fca.startsWith('(no FCA'));
+  if(!checked.length){log('FCA verification returned nothing — check FCA_API_KEY & FCA_EMAIL (Settings or Netlify env vars). NOTHING was removed.','er');running=false;$('run').disabled=false;render();return;}
+  const by={};checked.forEach(p=>{(by[p.fca]=by[p.fca]||[]).push(p.name);});
+  log('FCA verification complete — NOTHING REMOVED. Every lead is flagged; sort by the Register status column and decide yourself:','ok');
+  Object.entries(by).sort((a,b)=>b[1].length-a[1].length).forEach(([v,names])=>
+    log(`  ${v} (${names.length}): ${names.slice(0,10).join('; ')}`, /^IFA/.test(v)?'ok':'wn'));
+  render();setStats();running=false;$('run').disabled=false;
+}
+/* ---------- trade-register cross-reference ---------- */
+function crossReference(){
+  const raw=$('register').value.trim();
+  if(!raw){log('Paste the register member names first (one per line or comma-separated).','er');return;}
+  if(!LEADS.length){log('Run a sweep first — then cross-reference.','er');return;}
+  const badge=($('registerName').value||'REGISTER').trim().toUpperCase();
+  const members=raw.split(/[\n,]/).map(s=>normTxt(s)).filter(s=>s.length>3);
+  let hits=0;
+  LEADS.forEach(l=>{
+    const n=normTxt(l.name);
+    const match=members.some(m=>n.includes(m)||m.includes(n)||
+      (m.length>8&&n.length>8&&(n.slice(0,10)===m.slice(0,10))));
+    if(match){l.register=badge;hits++;} 
+  });
+  render();
+  log(`Cross-reference vs ${badge}: ${hits} of ${LEADS.length} kept leads are register members. `+
+      (hits?`These are verified independents — prioritise them in the funnel.`:'No matches — check the pasted list is for this area/category.'),hits?'ok':'wn');
+}
+/* ---------- Companies House universe check ---------- */
+async function universeCheck(){
+  if(MODE!=='functions'){log('Universe check needs the Netlify deployment (functions offline).','er');return;}
+  const sic=$('sic').value.trim(), area=$('area').value.trim().toUpperCase();
+  if(!sic){log('Enter a SIC code (96030 = funeral activities).','er');return;}
+  if(!area){log('Enter a postcode area to measure coverage against.','er');return;}
+  log(`Companies House: fetching all active companies with SIC ${sic} in ${area}…`,'wn');
+  try{
+    const r=await fetch('/.netlify/functions/sicsearch',{method:'POST',body:JSON.stringify({sic,area,chKey:localStorage.getItem('pp_CH')||undefined,maxPages:6})});
+    const d=await r.json();
+    if(d.error){log('Universe check failed — '+d.error,'er');return;}
+    const uni=d.results||[];
+    if(!uni.length){log(`No active companies found with SIC ${sic} registered in ${area}.`,'wn');return;}
+    // coverage: how many of the registered universe did our sweep find?
+    const swept=new Set(LEADS.map(l=>normTxt(l.name)));
+    const matched=uni.filter(u=>{const n=normTxt(u.name).replace(/limited|ltd$/,'');return [...swept].some(s=>s.includes(n.slice(0,12))||n.includes(s.slice(0,12)));});
+    const missing=uni.filter(u=>!matched.includes(u));
+    log(`Registered universe: ${uni.length} active companies (SIC ${sic}) with a registered office in ${area}.`,'ok');
+    log(`Your sweep captured approx ${matched.length} of them (${Math.round(matched.length/uni.length*100)}% coverage). ${missing.length} registered companies were NOT in your sweep — many are dormant/holding/home-based, but review the list below.`,'wn');
+    const show=missing.slice(0,40).map(m=>`${m.name} [${m.district||m.postcode||'?'}] ${m.companyNumber}`).join('\n  ');
+    log('Not captured by the sweep (first 40):\n  '+show,'wn');
+    window.__universe=uni;
+    log('Tip: export this universe with exportUniverse() in the browser console, or use these names to widen your search terms.','wn');
+  }catch(e){log('Universe check error — '+e.message,'er');}
+}
+function exportUniverse(){
+  const u=window.__universe||[];if(!u.length){log('Run the universe check first.','er');return;}
+  const cols=['name','companyNumber','incorporated','postcode','area','district','address','sic'];
+  const esc=v=>`"${String(Array.isArray(v)?v.join(' '):v).replace(/"/g,'""')}"`;
+  const csv=[cols.join(','),...u.map(r=>cols.map(c=>esc(r[c]??'')).join(','))].join('\n');
+  dl(new Blob(['\ufeff'+csv],{type:'text/csv'}),`ch_universe_${$('area').value}_${$('sic').value}.csv`);
+  log(`Exported ${u.length} registered companies.`,'ok');
+}
+function exportBrevo(){
+  const withEmail=LEADS.filter(l=>l.emails);
+  if(!withEmail.length){log('No leads have an email yet — run Enrich first (Brevo requires an EMAIL for every contact).','er');return;}
+  const cols=BREVO_COLS;
+  const rows=withEmail.map(brevoRow);
+  const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const csv=[cols.join(','),...rows.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n');
+  dl(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}),`brevo_${($('area').value||$('town').value||'leads')}_${Date.now()}.csv`);
+  const skipped=LEADS.length-withEmail.length;
+  log(`Brevo CSV exported — ${rows.length} contacts with email${skipped?`; ${skipped} lead(s) omitted (no email — Brevo rejects contacts without one)`:''}.`,'ok');
+}
+function exportData(kind){
+  if(!LEADS.length)return;
+  const cols=['area','district','name','source','saif_member','trading_brands','independent','register','aiType','aiReason','regStatus','fca','reg','frn','contact','phone','emails','website','address','rating','reviews','companyNo','sic','placeId'];
+  const data=LEADS.map(l=>{const o={};cols.forEach(c=>o[c]=l[c]??'');o.source=l.source||'discovery';o.saif_member=(/^(y|yes|true|1)$/i.test(String(l.saifMember||'')))?'Y':'';o.trading_brands=(l.tradingBrands||[]).join('; ');return o;});
+  if(kind==='csv'){
+    const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
+    const csv=[cols.join(','),...data.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n');
+    dl(new Blob([csv],{type:'text/csv'}),`prospector_${$('area').value||'export'}_${Date.now()}.csv`);
+  }else{
+    const ws=XLSX.utils.json_to_sheet(data);const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Leads');
+    XLSX.writeFile(wb,`prospector_${$('area').value||'export'}_${Date.now()}.xlsx`);
+  }
+  log(`Exported ${LEADS.length} leads as ${kind.toUpperCase()}.`,'ok');
+}
+
+/* ---------- connection mode: functions (full) vs direct browser (search-only) ---------- */
+let MODE='checking';
+async function detectMode(){
+  try{
+    const r=await fetch('/.netlify/functions/search',{method:'POST',body:JSON.stringify({ping:true})});
+    if(r.ok){const d=await r.json();if(d.pong){MODE='functions';}}
+  }catch(e){}
+  if(MODE!=='functions')MODE='direct';
+  const c=document.getElementById('conn');
+  if(MODE==='functions'){c.textContent='● Functions connected — full mode';c.style.color='var(--acc)';c.style.borderColor='var(--acc2)';}
+  else{c.textContent='● Browser mode — search works (key needed in Settings); enrichment needs Netlify deploy';c.style.color='var(--warn)';c.style.borderColor='var(--warn)';
+    log('Running in BROWSER MODE: serverless functions not reachable. District sweeps will call Google directly using the key in Settings. Email/contact/ownership enrichment requires the Netlify deployment (see README).','wn');
+    document.getElementById('enrichBtn').title='Requires Netlify functions';
+  }
+}
+const DIRECT_FIELDS="places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.types,places.businessStatus,nextPageToken";
+async function searchDistrict(query,maxPages){
+  if(MODE==='functions'){
+    const r=await fetch('/.netlify/functions/search',{method:'POST',body:JSON.stringify({query,maxPages,googleKey:localStorage.getItem('pp_Google')||undefined})});
+    return await r.json();
+  }
+  // direct browser call to Places API (New) — requires key in Settings
+  const key=localStorage.getItem('pp_Google');
+  if(!key)return{error:'Browser mode needs your Google Places API key — open Settings and paste it.'};
+  let results=[],pageToken=null,pages=0;
+  do{
+    const payload={textQuery:query,regionCode:'GB',languageCode:'en'};
+    if(pageToken)payload.pageToken=pageToken;
+    const r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',
+      headers:{'Content-Type':'application/json','X-Goog-Api-Key':key,'X-Goog-FieldMask':DIRECT_FIELDS},
+      body:JSON.stringify(payload)});
+    const data=await r.json();
+    if(data.error)return{error:data.error.message||'Places API error'};
+    (data.places||[]).forEach(p=>results.push({placeId:p.id,name:p.displayName?p.displayName.text:'',address:p.formattedAddress||'',
+      phone:p.nationalPhoneNumber||p.internationalPhoneNumber||'',website:p.websiteUri||'',rating:p.rating||null,
+      reviews:p.userRatingCount||0,types:p.types||[],status:p.businessStatus||''}));
+    pageToken=data.nextPageToken||null;pages++;
+    if(pageToken&&pages<maxPages)await new Promise(res=>setTimeout(res,350));
+  }while(pageToken&&pages<maxPages);
+  return{results,pages};
+}
+detectMode();
+// Populate the canonical-category picker and keep its auto-guess in step with the request.
+try{ initCategoryPicker(); const _tm=$('term'); if(_tm)_tm.addEventListener('input',refreshCategoryGuess); }catch(e){}
+
+
+/* ---------- system check: tests every component, prints pass/fail + the fix ---------- */
+async function systemCheck(){
+  log('SYSTEM CHECK — build v8','wn');
+  // 1. functions
+  let fn=false;
+  try{const r=await fetch('/.netlify/functions/search',{method:'POST',body:JSON.stringify({ping:true})});const d=await r.json();fn=!!d.pong;}catch(e){}
+  log(fn?'1. Serverless functions: PASS (full mode available)':'1. Serverless functions: FAIL — you are on the local file or the deploy has no functions. FIX: deploy the folder CONTENTS to Netlify (netlify.toml at root); check Site → Functions lists search/enrich/companieshouse/interpret. Without this, email/contact/ownership CANNOT run.',fn?'ok':'er');
+  // 2. Google key
+  let g=false,gmsg='';
+  try{const d=await searchDistrict('funeral directors BR1 Bromley',1);if(d.results){g=true;gmsg=d.results.length+' results returned';}else gmsg=d.error||'no response';}catch(e){gmsg=e.message;}
+  log(g?'2. Google Places key: PASS ('+gmsg+')':'2. Google Places key: FAIL — '+gmsg+'. FIX: Settings → paste key; ensure "Places API (New)" is enabled on the key.',g?'ok':'er');
+  if(!fn){log('3–5 skipped: enrichment, Companies House and the AI agent all need the functions (see 1).','er');return;}
+  // 3. enrich crawler
+  try{const r=await fetch('/.netlify/functions/enrich',{method:'POST',body:JSON.stringify({website:'https://www.netlify.com'})});const d=await r.json();
+    log(d&&!d.error?'3. Email crawler: PASS (function executing; test crawl note: "'+(d.note||'ok')+'")':'3. Email crawler: FAIL — '+(d.error||'no response'),d&&!d.error?'ok':'er');}catch(e){log('3. Email crawler: FAIL — '+e.message,'er');}
+  // 4. Companies House
+  try{const r=await fetch('/.netlify/functions/companieshouse',{method:'POST',body:JSON.stringify({name:'Dignity Funerals Limited',chKey:localStorage.getItem('pp_CH')||undefined})});const d=await r.json();
+    if(d.found)log('4. Companies House key: PASS (resolved '+d.companyName+' '+d.companyNumber+')','ok');
+    else if(d.skipped)log('4. Companies House key: NOT SET — ownership checks via the register are off. FIX: Settings → paste CH key (free).','er');
+    else log('4. Companies House: responded but no match — key works.','ok');}catch(e){log('4. Companies House: FAIL — '+e.message,'er');}
+  // 5. AI agent
+  try{const r=await fetch('/.netlify/functions/interpret',{method:'POST',body:JSON.stringify({request:'florists with at least 10 reviews',anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});const d=await r.json();
+    if(d.ok)log('5. AI agent: PASS — interpreted test request ("'+(d.search_term||'')+'")','ok');
+    else log('5. AI agent: NOT RUNNING'+(d.error?' ('+d.error+')':'')+'. FIX: Settings → paste Anthropic API key, or set ANTHROPIC_API_KEY env var on Netlify.','er');}catch(e){log('5. AI agent: FAIL — '+e.message,'er');}
+  log('System check complete. Fix any red line above, then sweep.','wn');
+}
+function applyTheme(t){document.documentElement.setAttribute('data-theme',t);
+  const b=document.getElementById('themeBtn');if(b)b.textContent=t==='light'?'◐ Dark':'☀ Light';
+  const m=document.getElementById('themeColorMeta');if(m)m.setAttribute('content',t==='light'?'#F4F6F9':'#0C1117');
+  localStorage.setItem('pp_theme_v2',t);}
+function toggleTheme(){applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light');}
+// Default to LIGHT (a fresh key, so the old auto-written 'dark' is ignored and
+// this flips existing browsers to light immediately). Explicit toggles persist.
+applyTheme(localStorage.getItem('pp_theme_v2')||'light');
+markKeys();
+populateCounties();
+try{initRegisterSupply();}catch(e){}
+log('Build v15 loaded — nothing is pre-selected; you tick your own picks, and we write up ONLY the ones you tick before sending. Click 🩺 System check to verify keys + functions before sweeping.','ok');
+</script>
+</body>
+</html>

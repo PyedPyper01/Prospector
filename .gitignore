@@ -1,0 +1,28 @@
+# dependencies / build
+node_modules/
+.netlify/
+functions-internal/
+
+# secrets / env — NEVER commit; keys live in Netlify env vars or the app's Settings panel
+.env
+.env.*
+*.pem
+*.key
+
+# Email Lead Generator outputs & caches (data files, not source — imported at runtime)
+cache/
+out/
+data/
+*.csv
+
+# logs / os / editor cruft
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# derived / large
+*.zip
+*.tar.gz
+dist/
