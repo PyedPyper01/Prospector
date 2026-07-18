@@ -1,5 +1,11 @@
 // Postcode Prospector — Places search per district (Google Places API New)
-const FIELDS = "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.types,places.businessStatus,nextPageToken";
+// Field mask = billing tier. We request only Essentials/Pro-tier fields:
+//   places.id, displayName, formattedAddress, location, businessStatus, types.
+// The Enterprise-tier fields (rating, userRatingCount, nationalPhoneNumber,
+// internationalPhoneNumber, websiteUri, opening hours) are deliberately OMITTED so
+// every Text Search bills at the cheaper "Text Search Pro" SKU instead of Enterprise.
+// Phone + website now come from enrichment; rating/review count are no longer fetched.
+const FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.types,nextPageToken";
 
 exports.handler = async (event) => {
   const headers = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
@@ -28,10 +34,11 @@ exports.handler = async (event) => {
         placeId: p.id,
         name: p.displayName ? p.displayName.text : "",
         address: p.formattedAddress || "",
-        phone: p.nationalPhoneNumber || p.internationalPhoneNumber || "",
-        website: p.websiteUri || "",
-        rating: p.rating || null,
-        reviews: p.userRatingCount || 0,
+        location: p.location || null,   // {latitude,longitude} — kept for geo use; Pro-tier field
+        phone: "",                      // no longer fetched at search — filled by enrichment
+        website: "",                    // no longer fetched at search — filled by enrichment
+        rating: null,                   // not fetched (Enterprise-tier field) — degrades gracefully
+        reviews: null,                  // not fetched (Enterprise-tier field) — degrades gracefully
         types: p.types || [],
         status: p.businessStatus || ""
       }));

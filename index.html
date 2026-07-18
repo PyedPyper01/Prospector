@@ -815,6 +815,8 @@ async function prepareSweep(){
   const needWeb=$('ruleWeb').checked, needPhone=$('rulePhone').checked, cap=+$('cap').value||0;
   if(req.minRev&&!uRev)log(`Note: agent suggested min ${req.minRev} reviews — IGNORED (your setting is 0).`,'wn');
   if(req.needWeb&&!needWeb)log('Note: agent suggested "must have website" — IGNORED (your rule is off).','wn');
+  if(minRev||minRate)log(`⚠ Min reviews/rating are set (${minRev||0}/${minRate||0}) but Google no longer returns rating or review count — those fields were dropped from the search to bill at the cheaper Pro tier. This filter will NOT exclude Google discovery rows; it is effectively inactive.`,'wn');
+  if(needWeb||needPhone)log('Note: "must have website/phone" now applies AFTER enrichment (website/phone come from enrichment, not the Google search).','wn');
   log(`Interpreted request — search: "${term}"`+(req.omit.length?` · omitting: ${req.omit.join(', ')}`:'')+(minRev?` · min reviews ${minRev}`:'')+(minRate?` · min rating ${minRate}`:'')+(needWeb?' · must have website':'')+(needPhone?' · must have phone':''),'wn');
   // source router (same across every area of a region)
   const catKey=detectCategory(term+' '+rawReq), catLabel=(term||'').toLowerCase().trim(), cfg=parseSourceRouter();
@@ -891,10 +893,17 @@ function estimateBatch(){
   let districts=0; areas.forEach(a=>{const h=DISTRICT_HINTS[a];districts+=h?expandHints(h).length:25;});
   const pages=+$('batchPages').value||1, searches=districts*cats.length*pages;
   const paid=($('source').value==='google'||$('source').value==='both');
-  const cost=paid?('£'+(searches*0.032).toFixed(0)):'£0 (free source selected)';
+  // Google Places (New) Text Search billing tier is set by the field mask. Our mask requests only
+  // Essentials/Pro-tier fields (id, name, address, location, businessStatus, types) → "Text Search Pro"
+  // SKU. Rating, review count, phone, website and opening hours are NOT requested, so we no longer hit
+  // the pricier Enterprise SKU. List prices (0–100k/mo): Pro ≈ $0.032/search; Enterprise ≈ $0.035; the
+  // old mask (with reviews) billed at Enterprise. GBP ≈ USD × 0.79.
+  const GPLACES={tier:'Text Search Pro',usd:0.032}, gbpRate=0.79;
+  const usdCost=searches*GPLACES.usd, gbpCost=usdCost*gbpRate;
+  const cost=paid?('$'+usdCost.toFixed(2)+' ≈ £'+gbpCost.toFixed(2)):'$0 (free source selected)';
   log(`BATCH ESTIMATE — ${areas.length} area(s) × ${cats.length} categor${cats.length===1?'y':'ies'} = ${jobs.length} jobs; ${districts.toLocaleString()} districts.`,'wn');
-  log(`  ≈ ${searches.toLocaleString()} searches ≈ ${cost}${paid?" (~3.2p each, before Google's free monthly allowance)":''}.`,paid?'wn':'ok');
-  if(paid)log('  Switch Data source to "FREE: auto" or "OpenStreetMap" to run this at £0 search cost.','wn');
+  log(`  ≈ ${searches.toLocaleString()} searches ≈ ${cost}${paid?`  ·  Google Places tier: ${GPLACES.tier} (~$${GPLACES.usd.toFixed(3)}/search ≈ ${(GPLACES.usd*gbpRate*100).toFixed(1)}p), before Google's free monthly allowance`:''}.`,paid?'wn':'ok');
+  if(paid)log('  Switch Data source to "FREE: auto" or "OpenStreetMap" to run this at $0 search cost.','wn');
   log(`  Time: roughly ${Math.round(searches*0.4/60)} min of sweeping${$('batchEnrich').value==='1'?' + enrichment (~1s/lead)':''}.`,'wn');
   if(BATCH.done.length)log(`  ${BATCH.done.length} job(s) already completed will be SKIPPED (resume).`,'wn');
 }
@@ -1378,10 +1387,14 @@ async function finalizePool(pool,ctx,opts){
       if(!typeHit&&!kwHit)excl='irrelevant';
     }
     if(!excl&&ctx.mustOpen&&p.status&&p.status!=='OPERATIONAL')excl='closed';
-    if(!excl&&ctx.minRev&&(p.reviews||0)<ctx.minRev)excl='reviews';
-    if(!excl&&ctx.minRate&&(p.rating||0)<ctx.minRate)excl='rating';
-    if(!excl&&ctx.needWeb&&!p.website)excl='no-web';
-    if(!excl&&ctx.needPhone&&!p.phone)excl='no-phone';
+    // Min reviews / min rating: rating & review count are NO LONGER fetched from Google (Enterprise-tier,
+    // dropped to cut cost). These filters only fire when a lead actually carries the data (p.rating/p.reviews
+    // != null) — for Google discovery rows that is now never, so they degrade to a no-op rather than
+    // excluding everything. A one-time warning is logged in prepareSweep when either threshold is set.
+    if(!excl&&ctx.minRev&&p.reviews!=null&&p.reviews<ctx.minRev)excl='reviews';
+    if(!excl&&ctx.minRate&&p.rating!=null&&p.rating<ctx.minRate)excl='rating';
+    // "Must have website / phone": website & phone now arrive via ENRICHMENT, not the search call, so they
+    // can't be judged here (pre-enrich). These rules moved to a post-enrichment pass (see enrichAll).
     if(excl){EXCLUDED++;DROPPED.push({name:p.name,reason:excl,pattern:p._wcDetail||'',area:realArea||'',district:realDistrict||'?',address:p.address||'',phone:p.phone||'',website:p.website||'',sources:(p.sources||[]).join('+'),rating:p.rating,reviews:p.reviews});continue;}
     const memberships=[...p.memberships];
     const foundAreas=[...(p.areas||[])].filter(Boolean);
@@ -1689,6 +1702,19 @@ async function enrichAll(){
   // matches). Idempotent — already-matched firms aren't re-added. Then report the final source split.
   {const c=(window.__lastCtx||{}); const rs=foldInRegister(c.catKey||detectCategory(c.term||($('term').value||'')),c.catLabel||c.term||$('term').value||'');
    if(rs.loaded)log(`SUPPLY SPLIT (final) — register-verified ${rs.registerOnly+rs.both}, discovery-only ${rs.discoveryOnly}, in BOTH ${rs.both}. Register firms carry their SAIF_MEMBER flag to export.`,'ok');}
+  // POST-ENRICH contact filter: website & phone now come from enrichment (Google search no longer returns
+  // them), so "must have website / phone" is enforced HERE on the enriched data instead of at sweep time.
+  {const c=(window.__lastCtx||{});
+   if(c.needWeb||c.needPhone){
+     const drop=l=>((c.needWeb&&!l.website)||(c.needPhone&&!l.phone));
+     const dropped=LEADS.filter(drop);
+     if(dropped.length){
+       LEADS=LEADS.filter(l=>!drop(l));
+       dropped.forEach(l=>DROPPED.push({name:l.name,reason:(c.needWeb&&!l.website)?'no-web':'no-phone',area:l.area||'',district:l.district||'?',address:l.address||'',phone:l.phone||'',website:l.website||'',sources:l.sources||'',rating:l.rating,reviews:l.reviews}));
+       EXCLUDED=DROPPED.length;
+       log(`Post-enrichment contact filter — dropped ${dropped.length} lead(s) still missing a required ${c.needWeb&&c.needPhone?'website/phone':c.needWeb?'website':'phone'} after enrichment.`,'wn');
+     }
+   }}
   $('bar').style.width='100%';render();setStats();
   const ars=LEADS.filter(l=>!l.planAR&&l.regStatus&&/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU|SUBSIDIARY/i.test(l.regStatus));
   if(ars.length){
@@ -1702,7 +1728,7 @@ async function enrichAll(){
   running=false;$('run').disabled=false;setStats();
 }
 
-let sortKey='reviews',sortDir=-1;
+let sortKey='alPriority',sortDir=1;   // default was 'reviews' — review count is no longer fetched, so open on AfterLife priority instead
 function sortBy(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=k==='name'||k==='district'?1:-1;}render();}
 function render(){
   if(!LEADS.length){$('results').innerHTML='<div class="empty"><b>No kept leads yet</b>Adjust rules or run a sweep.</div>';return;}
