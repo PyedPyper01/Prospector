@@ -172,6 +172,7 @@ td a:hover{text-decoration:underline}
       <label class="chk"><input type="checkbox" id="ruleOpen" checked> Operational businesses only</label>
       <label class="chk"><input type="checkbox" id="ruleArea" checked> Strict area match — drop results whose postcode is outside the searched area</label>
       <label class="chk"><input type="checkbox" id="aiClassify" checked> <b>AI classify every result</b> — Claude judges what each business actually is (catches mortgage brokers, chains, wrong trades)</label>
+      <label class="chk"><input type="checkbox" id="areaLevel"> <b>Area-level sweep</b> — one call per area on its main town ("florists in Colchester"), keep all results; falls back to district tiling only if an area yields &lt;5 after vetting</label>
       <label class="chk"><input type="checkbox" id="autoEnrich" checked> Auto-enrich after sweep (emails · contacts · ownership purge)</label>
       <label class="chk"><input type="checkbox" id="meteredEnrich" checked> Metered enrichment (Firecrawl + Hunter) <span class="muted">— uncheck for free/cheap validation runs</span></label>
       <div class="row">
@@ -799,6 +800,10 @@ function makePool(){
   return {POOL,poolIx,addToPool,get rawCount(){return rawCount;},get foreignCount(){return foreignCount;}};
 }
 function districtsForArea(a){a=(a||'').toUpperCase();const hint=DISTRICT_HINTS[a];const nums=hint?expandHints(hint):Array.from({length:25},(_,i)=>i+1);return nums.map(n=>a+n);}
+// Postcode area → its main town/city, for the AREA-LEVEL sweep mode (one Text Search per area,
+// "<category> in <town>", instead of tiling every district). London areas use their compass locality.
+const AREA_TOWNS={AL:'St Albans',B:'Birmingham',BA:'Bath',BB:'Blackburn',BD:'Bradford',BH:'Bournemouth',BL:'Bolton',BN:'Brighton',BR:'Bromley',BS:'Bristol',CA:'Carlisle',CB:'Cambridge',CF:'Cardiff',CH:'Chester',CM:'Chelmsford',CO:'Colchester',CR:'Croydon',CT:'Canterbury',CV:'Coventry',CW:'Crewe',DA:'Dartford',DE:'Derby',DH:'Durham',DL:'Darlington',DN:'Doncaster',DT:'Dorchester',DY:'Dudley',E:'East London',EC:'City of London',EN:'Enfield',EX:'Exeter',FY:'Blackpool',GL:'Gloucester',GU:'Guildford',HA:'Harrow',HD:'Huddersfield',HG:'Harrogate',HP:'Hemel Hempstead',HR:'Hereford',HU:'Hull',HX:'Halifax',IG:'Ilford',IP:'Ipswich',KT:'Kingston upon Thames',L:'Liverpool',LA:'Lancaster',LD:'Llandrindod Wells',LE:'Leicester',LL:'Llandudno',LN:'Lincoln',LS:'Leeds',LU:'Luton',M:'Manchester',ME:'Rochester Kent',MK:'Milton Keynes',N:'North London',NE:'Newcastle upon Tyne',NG:'Nottingham',NN:'Northampton',NP:'Newport',NR:'Norwich',NW:'North West London',OL:'Oldham',OX:'Oxford',PE:'Peterborough',PL:'Plymouth',PO:'Portsmouth',PR:'Preston',RG:'Reading',RH:'Redhill',RM:'Romford',S:'Sheffield',SA:'Swansea',SE:'South East London',SG:'Stevenage',SK:'Stockport',SL:'Slough',SM:'Sutton Surrey',SN:'Swindon',SO:'Southampton',SP:'Salisbury',SR:'Sunderland',SS:'Southend-on-Sea',ST:'Stoke-on-Trent',SW:'South West London',SY:'Shrewsbury',TA:'Taunton',TF:'Telford',TN:'Tunbridge Wells',TQ:'Torquay',TR:'Truro',TS:'Middlesbrough',TW:'Twickenham',UB:'Uxbridge',W:'West London',WA:'Warrington',WC:'Central London',WD:'Watford',WF:'Wakefield',WN:'Wigan',WR:'Worcester',WS:'Walsall',WV:'Wolverhampton',YO:'York'};
+function areaTown(a){return AREA_TOWNS[(a||'').toUpperCase()]||a;}
 
 /* ---------- prepare a sweep once: interpret request, parse rules, resolve sources ---------- */
 async function prepareSweep(){
@@ -1645,13 +1650,30 @@ async function runSearch(){
   const ctx=await prepareSweep();
   if(!ctx){running=false;$('run').disabled=false;return;}
   if(!townMode&&(!area||!districts.length)){log('Need a request plus either a postcode area with districts, or just a town name.','er');running=false;$('run').disabled=false;return;}
-  const tiles=townMode?[town,town+' town centre','near '+town]:districts;
-  $('sDistricts').textContent=tiles.length;$('sRaw').textContent=0;
+  const areaLevel=$('areaLevel')&&$('areaLevel').checked&&!townMode&&!!area;
   const pool=makePool();
-  log(townMode?`Sweep started — town mode: "${town}", term "${ctx.term}".`:`Sweep started — ${area}, ${tiles.length} districts, term "${ctx.term}".`,'ok');
-  const used=await gatherArea(area,districts,tiles,town,townMode,ctx,pool);
-  log(`Gather complete — ${pool.rawCount} raw from [${[...used].join(', ')}], ${pool.POOL.length} unique after merge.`,'ok');
-  await finalizePool(pool,ctx,{selectedAreas:townMode?[]:[area],runFollowups:true});
+  if(areaLevel){
+    // ITEM 4 — one Text Search on the area's main town, keep everything; district-tile ONLY if <5 survive vetting.
+    const twn=areaTown(area);
+    $('sDistricts').textContent=1;$('sRaw').textContent=0;
+    log(`Sweep started — AREA-LEVEL: "${ctx.term} in ${twn}" (${area}), one call, all results kept.`,'ok');
+    await gatherArea(area,[],[twn],twn,true,ctx,pool);
+    await finalizePool(pool,ctx,{selectedAreas:[area],runFollowups:false});   // rules/vet pass to count survivors
+    const kept=LEADS.filter(l=>(l.area||'').toUpperCase()===area).length;
+    if(kept<5){
+      const fb=districts.length?districts:districtsForArea(area);
+      log(`Area-level "${twn}" → ${kept} after vetting (<5) — falling back to district tiling for ${area} (${fb.length} districts).`,'wn');
+      await gatherArea(area,fb,fb,'',false,ctx,pool);
+    } else log(`Area-level "${twn}" → ${kept} after vetting — deep enough, no district fallback.`,'ok');
+    await finalizePool(pool,ctx,{selectedAreas:[area],runFollowups:true});
+  } else {
+    const tiles=townMode?[town,town+' town centre','near '+town]:districts;
+    $('sDistricts').textContent=tiles.length;$('sRaw').textContent=0;
+    log(townMode?`Sweep started — town mode: "${town}", term "${ctx.term}".`:`Sweep started — ${area}, ${tiles.length} districts, term "${ctx.term}".`,'ok');
+    const used=await gatherArea(area,districts,tiles,town,townMode,ctx,pool);
+    log(`Gather complete — ${pool.rawCount} raw from [${[...used].join(', ')}], ${pool.POOL.length} unique after merge.`,'ok');
+    await finalizePool(pool,ctx,{selectedAreas:townMode?[]:[area],runFollowups:true});
+  }
   log(`Sweep complete — ${LEADS.length} kept, ${EXCLUDED} excluded.`,'ok');
   if(townMode&&LEADS.length){
     const counts={};LEADS.forEach(l=>{if(l.area)counts[l.area]=(counts[l.area]||0)+1;});
@@ -1684,16 +1706,33 @@ async function regionLoop(){
   while(REGION.queue.length && !regionCancel){
     const area=REGION.queue[0];REGION.current=area;updateRegionPanel('running');
     const districts=districtsForArea(area);
-    $('sDistricts').textContent=districts.length;
-    log(`— Area ${REGION.done.length+1}/${REGION.total}: ${area} (${districts.length} districts)…`,'wn');
-    try{await gatherArea(area,districts,districts,town,false,ctx,pool);}
-    catch(e){log(`Area ${area} failed — ${e.message} (continuing to next area).`,'er');}
+    const areaLevel=$('areaLevel')&&$('areaLevel').checked;
+    if(areaLevel){
+      const twn=areaTown(area); $('sDistricts').textContent=1;
+      log(`— Area ${REGION.done.length+1}/${REGION.total}: ${area} — area-level "${ctx.term} in ${twn}"…`,'wn');
+      try{await gatherArea(area,[],[twn],twn,true,ctx,pool);}catch(e){log(`Area ${area} failed — ${e.message} (continuing).`,'er');}
+    } else {
+      $('sDistricts').textContent=districts.length;
+      log(`— Area ${REGION.done.length+1}/${REGION.total}: ${area} (${districts.length} districts)…`,'wn');
+      try{await gatherArea(area,districts,districts,town,false,ctx,pool);}
+      catch(e){log(`Area ${area} failed — ${e.message} (continuing to next area).`,'er');}
+    }
     REGION.queue.shift();REGION.done.push(area);REGION.current=null;updateRegionPanel('running');
     if(REGION.queue.length&&!regionCancel)await new Promise(r=>setTimeout(r,900)); // polite pause between areas
   }
   const finished=REGION.queue.length===0;
   log(`Merging & finalizing ${pool.POOL.length} unique firm(s) across ${REGION.done.length} area(s)…`,'ok');
   await finalizePool(pool,ctx,{selectedAreas:REGION.selectedAreas,runFollowups:false}); // heavy classify/enrich/vet are manual for a region
+  // AREA-LEVEL fallback: any area with <5 survivors gets district-tiled, then re-finalise the enlarged pool.
+  if($('areaLevel')&&$('areaLevel').checked&&finished&&!regionCancel){
+    const cnt={}; LEADS.forEach(l=>{const a=(l.area||'').toUpperCase(); if(a)cnt[a]=(cnt[a]||0)+1;});
+    const thin=REGION.selectedAreas.filter(a=>(cnt[(a||'').toUpperCase()]||0)<5);
+    if(thin.length){
+      log(`Area-level: ${thin.length} area(s) yielded <5 after vetting — district-tiling them: ${thin.join(', ')}.`,'wn');
+      for(const a of thin){ if(regionCancel)break; const ds=districtsForArea(a); try{await gatherArea(a,ds,ds,'',false,ctx,pool);}catch(e){} }
+      await finalizePool(pool,ctx,{selectedAreas:REGION.selectedAreas,runFollowups:false});
+    }
+  }
   running=false;$('run').disabled=false;$('regionRun').disabled=false;
   setStats();  // CRUCIAL: re-enable Enrich/Vet buttons (finalizePool ran setStats while running=true → they were left disabled). Without this the Enrich button is dead after a region sweep.
   updateRegionPanel(finished?'done':'paused');
@@ -2468,28 +2507,33 @@ async function publishAfterLife(){
   // postcode areas is Regional/National on the marketplace, so it must publish ONCE with an
   // `areas` array covering all of them — otherwise the same name → same slug → the records
   // overwrite each other and the firm shows in only one area. Local firms (one area) stay single.
-  const firmGroupKey=l=>{const ch=(l.companyNo||'').toString().replace(/\s/g,'').toUpperCase();const dom=domainOf(l.website);const edom=emailDomOf({emails:l.emails});return ch?('c:'+ch):dom?('d:'+dom):edom?('m:'+edom):('n:'+nameKey(l.name));};
+  // ONE SLOT PER AREA (matches the register model). Group by firm AND area, so a firm swept in SE, DA and
+  // BR publishes as three records — one per area, each with that area's branch address + phone — sharing a
+  // COMPANY_ID ROOT (slug(name)-<area>). Branches WITHIN an area were already collapsed to one row upstream.
+  const slugId=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);
+  const firmGroupKey=l=>{const ch=(l.companyNo||'').toString().replace(/\s/g,'').toUpperCase();const dom=domainOf(l.website);const edom=emailDomOf({emails:l.emails});const base=ch?('c:'+ch):dom?('d:'+dom):edom?('m:'+edom):('n:'+nameKey(l.name));return base+'|'+(l.area||'').toUpperCase();};
   const groups=new Map();
   approve.forEach(l=>{const k=firmGroupKey(l);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l);});
-  const tierFor=n=>n<=1?'Local':(n<=4?'Regional':'National');
   const suppliers=[...groups.values()].map(g=>{
     const primary=g.find(l=>l.alDescription&&l.alDescription.trim())||g.slice().sort((a,b)=>(a.alPriority||99)-(b.alPriority||99))[0]||g[0];
-    const areas=[...new Set(g.map(l=>(l.area||'').toUpperCase().replace(/[^A-Z]/g,'')).filter(Boolean))].sort();
+    const area=(primary.area||'').toUpperCase().replace(/[^A-Z]/g,'');
     const branches=[].concat(...g.map(l=>l.branches||[]));
     const gCatId=primary.pubCatId||catId;                                   // per-row category (manual supply) wins; else the picker
     const gCatLabel=primary.pubCatLabel||(AL_CATEGORIES.find(c=>c.id===gCatId)||{}).label||catLabel;
-    return {name:primary.name,category:gCatId,categoryLabel:gCatLabel,
-      areas, area:areas[0]||'', tier:tierFor(areas.length),
+    return {id:(slugId(primary.name)+'-'+(area||'xx').toLowerCase()),      // shared root, area suffix → one slot per area
+      name:primary.name,category:gCatId,categoryLabel:gCatLabel,
+      areas:[area], area, tier:'Local',
       district:primary.district||'',town,address:primary.address||'',website:primary.website||'',
       credentials:(primary.alCredentials||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean),
       description:primary.alDescription||'',priority:typeof primary.alPriority==='number'?primary.alPriority:99,
-      contactEmail:(primary.emails||'').split(';')[0].trim(),companyNo:primary.companyNo||'',
+      contactEmail:(primary.emails||'').split(';')[0].trim(),contactPhone:primary.phone||'',companyNo:primary.companyNo||'',
       verified:[primary.register,primary.fca||primary.reg,primary.regStatus].filter(Boolean).join(' · '),
       notes:[primary.alNotes,branches.length>1?('Branches: '+branches.map(b=>b.address||b.postcode).filter(Boolean).slice(0,12).join(' | ')):''].filter(Boolean).join(' — ')};
   });
-  const multiArea=suppliers.filter(s=>s.areas.length>1);
-  if(multiArea.length)log(`${multiArea.length} multi-area firm(s) publishing as Regional/National with a full areas array: `+multiArea.slice(0,6).map(s=>`${s.name} [${s.areas.join(',')} → ${s.tier}]`).join('; '),'ok');
-  log(`Publishing ${suppliers.length} supplier record(s) to AfterLife${suppliers.length!==approve.length?` (${approve.length} ticked rows consolidated by firm)`:''}…`,'wn');
+  const rootAreas={}; suppliers.forEach(s=>{const root=s.id.replace(/-[a-z0-9]+$/,'');(rootAreas[root]=rootAreas[root]||new Set()).add(s.area);});
+  const multi=Object.entries(rootAreas).filter(([r,as])=>as.size>1);
+  if(multi.length)log(`${multi.length} multi-area firm(s) publishing as ONE SLOT PER AREA (shared COMPANY_ID root): `+multi.slice(0,6).map(([r,as])=>`${r} [${[...as].sort().join(',')}]`).join('; '),'ok');
+  log(`Publishing ${suppliers.length} supplier record(s) to AfterLife (one per firm per area)…`,'wn');
   try{
     const r=await fetch('/.netlify/functions/publish',{method:'POST',body:JSON.stringify({suppliers})});
     const d=await r.json();

@@ -283,5 +283,29 @@ function contactNameFor(chConfidence, officers, websiteContact) {
   eq(contactNameFor(corroborated, ["MASON, Lily"], "") !== "", true, "…so a verified match may carry the contact");
 }
 
+console.log("\n16. Publish one slot PER AREA: a firm swept in SE/DA/BR → 3 records (shared COMPANY_ID root, that area's phone); two SE branches → one SE record");
+// mirror of publishAfterLife's per-area grouping
+{
+  const slugId = s => String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,48);
+  const domainOfW = w => String(w||"").toLowerCase().replace(/^https?:\/\//,"").replace(/^www\./,"").split("/")[0];
+  const firmGroupKey = l => { const dom = domainOfW(l.website); const base = dom ? ("d:"+dom) : ("n:"+nameKey(l.name)); return base + "|" + (l.area||"").toUpperCase(); };
+  const leads = [
+    { name:"W Uden & Sons Ltd", website:"https://wuden.com", area:"SE", phone:"020 8850 2868" },
+    { name:"W Uden & Sons Ltd", website:"https://wuden.com", area:"DA", phone:"020 8303 1279" },
+    { name:"W Uden & Sons Ltd", website:"https://wuden.com", area:"BR", phone:"01689 822291" },
+    { name:"W Uden & Sons Ltd (Eltham)", website:"https://wuden.com", area:"SE", phone:"020 8850 2868" }, // 2nd SE branch → same SE slot
+  ];
+  const groups = {};
+  leads.forEach(l => { const k = firmGroupKey(l); (groups[k]=groups[k]||[]).push(l); });
+  const recs = Object.values(groups).map(g => { const p = g[0]; const area = (p.area||"").toUpperCase(); return { id: slugId(p.name.replace(/\s*\(.*\)$/,""))+"-"+area.toLowerCase(), area, phone: p.phone, areas:[area] }; });
+  eq(recs.length, 3, "one firm across SE/DA/BR → exactly 3 records (one per area), the 2nd SE branch merged");
+  eq(recs.map(r=>r.area).sort().join(","), "BR,DA,SE", "…one record in each of BR, DA, SE");
+  const roots = [...new Set(recs.map(r => r.id.replace(/-[a-z0-9]+$/,"")))];
+  eq(roots.length, 1, "…all three share ONE COMPANY_ID root");
+  eq(recs.every(r => r.areas.length === 1 && r.areas[0] === r.area), true, "…each record is a single-area (Local) slot");
+  const se = recs.find(r => r.area === "SE");
+  eq(se.phone, "020 8850 2868", "…the SE record carries the SE branch phone");
+}
+
 console.log(`\n═══ ${PASS} passed, ${FAIL} failed ═══`);
 process.exit(FAIL ? 1 : 0);

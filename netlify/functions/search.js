@@ -1,11 +1,10 @@
 // Postcode Prospector — Places search per district (Google Places API New)
-// STAGE 1 = DISCOVERY. Field mask = billing tier. We request ONLY Pro-tier fields
-//   (id, displayName, formattedAddress, location, businessStatus, types) → "Text Search Pro" SKU,
-//   ~$32/1,000, first 5,000 calls/month FREE. NO websiteUri / phone / rating here — those are bought
-//   on demand in STAGE 2 (placedetails.js, a SEPARATE Place Details SKU with its own 5,000/mo free
-//   allowance) only for vetted leads the operator has ticked. Sweep wide cheaply; buy contact data
-//   only for keepers.
-const FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.types,nextPageToken";
+// Field mask = billing tier. websiteUri + nationalPhoneNumber are back in the mask so every sweep returns
+// a website (for the crawler to find an email) and a phone (to judge/contact the firm). This puts Text
+// Search on the ENTERPRISE tier: 1,000 free calls/month, then ~$35/1,000 (≈35 free sweeps/mo at 28
+// districts). STILL OMITTED (cost without benefit): rating, userRatingCount/reviews, opening hours.
+// The two-stage design (cheap Pro search + on-demand Place Details) remains the long-term answer.
+const FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.types,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber,nextPageToken";
 
 exports.handler = async (event) => {
   const headers = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
@@ -35,8 +34,8 @@ exports.handler = async (event) => {
         name: p.displayName ? p.displayName.text : "",
         address: p.formattedAddress || "",
         location: p.location || null,   // {latitude,longitude} — kept for geo use
-        phone: "",                      // STAGE 2 (Place Details, on demand for ticked leads) fills this
-        website: "",                    // STAGE 2 fills this; enrichment then crawls it for the email
+        phone: p.nationalPhoneNumber || p.internationalPhoneNumber || "",  // back in the mask — outreach + judging
+        website: p.websiteUri || "",    // back in the mask — the crawler reads it for the email
         rating: null,                   // not fetched (cost without benefit)
         reviews: null,                  // not fetched (cost without benefit)
         types: p.types || [],
