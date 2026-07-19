@@ -41,7 +41,7 @@ function selectEmails(all, siteHost, hints) {
   const base = regDomain(siteHost); const own = [], web = [];
   for (const e of all) { if (BAD_LOCAL.test(e.split("@")[0] || "")) continue; const dom = (e.split("@")[1] || "").toLowerCase(); if (regDomain(dom) === base || dom.endsWith("." + base)) own.push(e); else if (GENERIC_WEBMAIL.has(dom)) web.push(e); }
   let chosen = own;
-  if (own.length > 3) { const toks = (hints || []).map(h => String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "")).filter(t => t.length >= 3); const branch = own.filter(e => { const s = e.toLowerCase().replace(/[^a-z0-9]/g, ""); return toks.some(t => s.includes(t)); }); const generic = own.filter(e => GENERIC_LOCAL.test(e.split("@")[0])); chosen = branch.length ? branch : (generic.length ? generic : []); }
+  if (own.length > 3) { const toks = (hints || []).flatMap(h => String(h || "").toLowerCase().split(/[^a-z0-9]+/)).filter(t => t.length >= 3); const branch = own.filter(e => { const s = e.toLowerCase().replace(/[^a-z0-9]/g, ""); return toks.some(t => s.includes(t)); }); const generic = own.filter(e => GENERIC_LOCAL.test(e.split("@")[0])); chosen = branch.length ? branch : (generic.length ? generic : own); }  // keep own-domain emails rather than dropping to [] (enrich.js fix)
   return [...new Set([...chosen, ...web])].slice(0, 3);
 }
 // CH match confidence (mirror of companieshouse.js)
@@ -79,10 +79,16 @@ function chainVerdict({ website, emails = [], independent = "", saif = false, na
 }
 
 /* ───────── FIXTURES ───────── */
-console.log("\n1. Enfield Crematorium + CMG email blob → wrong-category rejected, emails []");
-eq(wrongCategory("Enfield Crematorium & Cemetery", "funeral"), "crematorium/cemetery", "Enfield Crematorium → wrong-category");
+console.log("\n1. Enfield Crematorium + CMG email blob → row rejected by wrong-category + group-domain; selectEmails keeps own-domain only (cross-org + artefacts dropped)");
+eq(wrongCategory("Enfield Crematorium & Cemetery", "funeral"), "crematorium/cemetery", "Enfield Crematorium → wrong-category (row rejected before its emails matter)");
 const cmgLeak = ["exeteranddevon.crematorium@thecmg.co.uk","eastlondon.crematorium@thecmg.co.uk","southlondon.crematorium@thecmg.co.uk","beckenham.crematorium@thecmg.co.uk","randallspark.crematorium@thecmg.co.uk","contact-section-email-3@thecmg.co.uk","kingston.admissions@achievingforchildren.co.uk"];
-eq(selectEmails(cmgLeak, "www.thecmg.co.uk", ["Enfield Crematorium", "Enfield"]), [], "Enfield gets [] (no branch/generic match; cross-org + artefact dropped)");
+// enrich.js fix: selectEmails no longer drops verified own-domain emails to [] (that lost real named-staff
+// addresses on legit firms). For a group page it now returns own-domain addresses — but the CMG ROW itself is
+// still excluded upstream by wrong-category (above) + group-domain detection (#2) + registry (#11), so nothing leaks.
+const picked = selectEmails(cmgLeak, "www.thecmg.co.uk", ["Enfield Crematorium", "Enfield"]);
+eq(picked.length > 0 && picked.every(e => e.endsWith("@thecmg.co.uk")), true, "selectEmails keeps ONLY own-domain (thecmg) addresses");
+eq(picked.includes("kingston.admissions@achievingforchildren.co.uk"), false, "cross-organisation email (achievingforchildren) dropped");
+eq(picked.some(e => /contact-section/.test(e)), false, "HTML-artefact local-part dropped");
 
 console.log("\n2. thecmg.co.uk across areas → CONSOLIDATOR group DETECTED");
 eq(isGroup("thecmg.co.uk", ["Enfield Crematorium", "East London Crematorium", "Beckenham Crematorium"], 3), true, "thecmg = group");

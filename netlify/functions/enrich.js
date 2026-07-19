@@ -46,10 +46,18 @@ function selectEmails(all, siteHost, hints) {
   }
   let chosen = own;
   if (own.length > 3) {
-    const toks = (hints || []).map(h => String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "")).filter(t => t.length >= 3);
+    // Split multi-word hints (firm name, town, area) into individual WORD tokens instead
+    // of collapsing e.g. "F A Albin & Sons" into one unmatchable blob "faalbinsons".
+    const toks = (hints || [])
+      .flatMap(h => String(h || "").toLowerCase().split(/[^a-z0-9]+/))
+      .filter(t => t.length >= 3);
     const branch = own.filter(e => { const s = e.toLowerCase().replace(/[^a-z0-9]/g, ""); return toks.some(t => s.includes(t)); });
     const generic = own.filter(e => GENERIC_LOCAL.test(e.split("@")[0]));
-    chosen = branch.length ? branch : (generic.length ? generic : []);   // no branch + no generic ⇒ none belong to THIS row
+    // Prefer a branch-specific match, then a generic mailbox, but NEVER discard genuinely
+    // verified own-domain emails just because neither heuristic fired (e.g. named-staff
+    // addresses like "elaine@" or "mottingham@" on a multi-branch site). Losing branch
+    // precision is far better than losing the email entirely.
+    chosen = branch.length ? branch : (generic.length ? generic : own);
   }
   return [...new Set([...chosen, ...web])].slice(0, 3);
 }
@@ -99,11 +107,15 @@ async function fetchText(url, ms = 9000, ua = UA_CHROME) {
     const r = await fetch(url, { signal: ctrl.signal, redirect: "follow", headers: {
       "User-Agent": ua,
       "Accept": "text/html,application/xhtml+xml,*/*;q=0.8", "Accept-Language": "en-GB,en;q=0.9" } });
-    if (!r.ok) return { html: "", code: r.status };
+    if (!r.ok) return { html: "", code: r.status, finalUrl: r.url || url };
     const ct = r.headers.get("content-type") || "";
-    if (!ct.includes("text") && !ct.includes("html") && !ct.includes("json")) return { html: "", code: 415 };
-    return { html: await r.text(), code: 200 };
-  } catch (e) { return { html: "", code: 0 }; } finally { clearTimeout(t); }
+    if (!ct.includes("text") && !ct.includes("html") && !ct.includes("json")) return { html: "", code: 415, finalUrl: r.url || url };
+    // r.url is the URL AFTER following redirects — capture it so callers can tell when a
+    // site's own domain has moved (rebrand/migration), instead of comparing later-crawled
+    // emails against the stale pre-redirect hostname and wrongly treating them as belonging
+    // to "a different organisation".
+    return { html: await r.text(), code: 200, finalUrl: r.url || url };
+  } catch (e) { return { html: "", code: 0, finalUrl: url }; } finally { clearTimeout(t); }
 }
 
 function scanRegulatory(html, out){
@@ -216,9 +228,14 @@ exports.handler = async (event) => {
         if (out.ownership) break;
       }
     }
-    // keep only THIS firm's addresses (own domain / webmail), branch-preferred, capped at 3
+    // keep only THIS firm's addresses (own domain / webmail), branch-preferred, capped at 3.
+    // Use the FINAL resolved hostname (after any redirect) rather than the original input
+    // hostname, so a site that redirected to a new domain doesn't get its own emails
+    // misclassified as "a different organisation's domain".
+    let resolvedHost = base.hostname;
+    try { if (home.finalUrl) resolvedHost = new URL(home.finalUrl).hostname; } catch {}
     const rawEmails = [...emails];
-    out.emails = selectEmails(rawEmails, base.hostname, [firmName, firmTown, firmArea, (firmName.split(/\s+/)[0] || "")]);
+    out.emails = selectEmails(rawEmails, resolvedHost, [firmName, firmTown, firmArea, (firmName.split(/\s+/)[0] || "")]);
     if (rawEmails.length > out.emails.length) out.emailsTrimmed = rawEmails.length - out.emails.length;
     out.contacts = [...names].slice(0, 3);
     // Capped, stripped site text — handed to /vetrank so Claude can read the firm's own
