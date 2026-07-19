@@ -1646,11 +1646,11 @@ async function runSearch(){
   const districts=$('districts').value.split(',').map(s=>s.trim()).filter(Boolean).filter(d=>/^[A-Z]{1,2}\d/i.test(d));
   const town=$('town').value.trim();
   const townMode=(!area||!districts.length)&&!!town;
+  const areaLevel=$('areaLevel')&&$('areaLevel').checked&&!townMode&&!!area;   // area-level needs only the area (its main town), not districts
   running=true;$('run').disabled=true;regionCancel=false;
   const ctx=await prepareSweep();
   if(!ctx){running=false;$('run').disabled=false;return;}
-  if(!townMode&&(!area||!districts.length)){log('Need a request plus either a postcode area with districts, or just a town name.','er');running=false;$('run').disabled=false;return;}
-  const areaLevel=$('areaLevel')&&$('areaLevel').checked&&!townMode&&!!area;
+  if(!townMode&&!areaLevel&&(!area||!districts.length)){log('Need a request plus either a postcode area with districts, or just a town name.','er');running=false;$('run').disabled=false;return;}
   const pool=makePool();
   if(areaLevel){
     // ITEM 4 — one Text Search on the area's main town, keep everything; district-tile ONLY if <5 survive vetting.
