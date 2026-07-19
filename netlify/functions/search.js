@@ -1,10 +1,10 @@
 // Postcode Prospector — Places search per district (Google Places API New)
-// Field mask = billing tier. We request only Essentials/Pro-tier fields:
-//   places.id, displayName, formattedAddress, location, businessStatus, types.
-// The Enterprise-tier fields (rating, userRatingCount, nationalPhoneNumber,
-// internationalPhoneNumber, websiteUri, opening hours) are deliberately OMITTED so
-// every Text Search bills at the cheaper "Text Search Pro" SKU instead of Enterprise.
-// Phone + website now come from enrichment; rating/review count are no longer fetched.
+// STAGE 1 = DISCOVERY. Field mask = billing tier. We request ONLY Pro-tier fields
+//   (id, displayName, formattedAddress, location, businessStatus, types) → "Text Search Pro" SKU,
+//   ~$32/1,000, first 5,000 calls/month FREE. NO websiteUri / phone / rating here — those are bought
+//   on demand in STAGE 2 (placedetails.js, a SEPARATE Place Details SKU with its own 5,000/mo free
+//   allowance) only for vetted leads the operator has ticked. Sweep wide cheaply; buy contact data
+//   only for keepers.
 const FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.types,nextPageToken";
 
 exports.handler = async (event) => {
@@ -34,11 +34,11 @@ exports.handler = async (event) => {
         placeId: p.id,
         name: p.displayName ? p.displayName.text : "",
         address: p.formattedAddress || "",
-        location: p.location || null,   // {latitude,longitude} — kept for geo use; Pro-tier field
-        phone: "",                      // no longer fetched at search — filled by enrichment
-        website: "",                    // no longer fetched at search — filled by enrichment
-        rating: null,                   // not fetched (Enterprise-tier field) — degrades gracefully
-        reviews: null,                  // not fetched (Enterprise-tier field) — degrades gracefully
+        location: p.location || null,   // {latitude,longitude} — kept for geo use
+        phone: "",                      // STAGE 2 (Place Details, on demand for ticked leads) fills this
+        website: "",                    // STAGE 2 fills this; enrichment then crawls it for the email
+        rating: null,                   // not fetched (cost without benefit)
+        reviews: null,                  // not fetched (cost without benefit)
         types: p.types || [],
         status: p.businessStatus || ""
       }));

@@ -240,6 +240,8 @@ td a:hover{text-decoration:underline}
       <select id="pubCategory" onchange="pubCategoryTouched=true;updateSelCount()" style="width:100%;margin-top:4px"></select>
       <div id="pubCatHint" class="muted" style="font-size:11.5px;margin-top:4px">Set your request above and this auto-fills.</div>
       <div id="selCount" class="muted" style="font-size:12px;margin-top:10px">Nothing is pre-selected. After Vet &amp; Rank, tick the suppliers you want in the ✓ column — the count you pick shows here.</div>
+      <button class="ghost small" id="detailsBtn" onclick="getContactDetails()" disabled style="width:100%;margin-top:8px">☎ Get contact details for selected <span class="muted">(Google Place Details + crawl)</span></button>
+      <div class="muted" style="font-size:11px;margin-top:3px">Buys website + phone (separate Place Details SKU, own 5,000/mo free) only for the ticked keepers, then crawls each site for an email.</div>
       <button class="ghost small" id="publishBtn" onclick="publishAfterLife()" disabled style="width:100%;margin-top:8px">▲ Publish selected to AfterLife</button>
     </div>
   </aside>
@@ -900,17 +902,19 @@ function estimateBatch(){
   let districts=0; areas.forEach(a=>{const h=DISTRICT_HINTS[a];districts+=h?expandHints(h).length:25;});
   const pages=+$('batchPages').value||1, searches=districts*cats.length*pages;
   const paid=($('source').value==='google'||$('source').value==='both');
-  // Google Places (New) Text Search billing tier is set by the field mask. Our mask requests only
-  // Essentials/Pro-tier fields (id, name, address, location, businessStatus, types) → "Text Search Pro"
-  // SKU. Rating, review count, phone, website and opening hours are NOT requested, so we no longer hit
-  // the pricier Enterprise SKU. List prices (0–100k/mo): Pro ≈ $0.032/search; Enterprise ≈ $0.035; the
-  // old mask (with reviews) billed at Enterprise. GBP ≈ USD × 0.79.
-  const GPLACES={tier:'Text Search Pro',usd:0.032}, gbpRate=0.79;
-  const usdCost=searches*GPLACES.usd, gbpCost=usdCost*gbpRate;
+  // TWO SEPARATE Google Places SKUs, each with its OWN free monthly allowance:
+  //   STAGE 1 (this sweep) = Text Search PRO ~$0.032/search, first 5,000/mo free.
+  //   STAGE 2 (on-demand, ticked keepers only) = Place Details PRO ~$0.017/lookup, first 5,000/mo free.
+  // Splitting the call this way gives ~5× the free headroom of the single Enterprise-tier mask (which had
+  // only 1,000 free), and you buy contact data only for leads you keep. GBP ≈ USD × 0.79.
+  const S1={tier:'Text Search Pro',usd:0.032,free:5000}, S2={tier:'Place Details Pro',usd:0.017,free:5000}, gbpRate=0.79;
+  const billable=Math.max(0,searches-S1.free);
+  const usdCost=billable*S1.usd, gbpCost=usdCost*gbpRate;
   const cost=paid?('$'+usdCost.toFixed(2)+' ≈ £'+gbpCost.toFixed(2)):'$0 (free source selected)';
   log(`BATCH ESTIMATE — ${areas.length} area(s) × ${cats.length} categor${cats.length===1?'y':'ies'} = ${jobs.length} jobs; ${districts.toLocaleString()} districts.`,'wn');
-  log(`  ≈ ${searches.toLocaleString()} searches ≈ ${cost}${paid?`  ·  Google Places tier: ${GPLACES.tier} (~$${GPLACES.usd.toFixed(3)}/search ≈ ${(GPLACES.usd*gbpRate*100).toFixed(1)}p), before Google's free monthly allowance`:''}.`,paid?'wn':'ok');
-  if(paid)log('  Switch Data source to "FREE: auto" or "OpenStreetMap" to run this at $0 search cost.','wn');
+  log(`  STAGE 1 · discovery — ≈ ${searches.toLocaleString()} searches ≈ ${cost}${paid?`  ·  ${S1.tier} (~$${S1.usd.toFixed(3)}/search ≈ ${(S1.usd*gbpRate*100).toFixed(1)}p; first ${S1.free.toLocaleString()}/mo free${searches>S1.free?`, so ${billable.toLocaleString()} billable`:` — within the free allowance`})`:''}.`,paid?'wn':'ok');
+  if(paid)log(`  STAGE 2 · contact details — bought ON DEMAND only for leads you tick after vetting: ${S2.tier} ~$${S2.usd.toFixed(3)}/lookup (≈ ${(S2.usd*gbpRate*100).toFixed(1)}p), SEPARATE ${S2.free.toLocaleString()}/mo free allowance. Not spent on rejects.`,'wn');
+  if(paid)log('  Switch Data source to "FREE: auto" or "OpenStreetMap" to run STAGE 1 at $0 search cost.','wn');
   log(`  Time: roughly ${Math.round(searches*0.4/60)} min of sweeping${$('batchEnrich').value==='1'?' + enrichment (~1s/lead)':''}.`,'wn');
   if(BATCH.done.length)log(`  ${BATCH.done.length} job(s) already completed will be SKIPPED (resume).`,'wn');
 }
@@ -1641,6 +1645,109 @@ function updateRegionPanel(state){
     `</div>`;
 }
 
+// Per-lead enrichment: crawl the firm's website for email/contact + a Companies House match. Shared by the
+// full enrichAll pass AND the on-demand STAGE-2 "Get contact details" action, so the CONTACT-NAME GATE
+// lives in ONE place. GATE (fixture-locked): a director name from Companies House becomes the contact ONLY
+// when the match is HIGH confidence (name close AND registered-office postcode corroborates the business
+// address). A low/medium (fuzzy) match still enriches the company number — held UNVERIFIED — but NEVER the
+// contact name (that fuzzy path is what put the Superdry founder on a florist). A contact scraped from the
+// firm's OWN website is always allowed; it's on their own site.
+async function enrichLead(l){
+  const jobs=[];
+  jobs.push(l.website?fetch('/.netlify/functions/enrich',{method:'POST',body:JSON.stringify({website:l.website,name:l.name,town:$('town').value||'',area:l.area||'',hunterKey:localStorage.getItem('pp_Hunter')||undefined})}).then(r=>r.json()):Promise.resolve({emails:[],contacts:[]}));
+  jobs.push(fetch('/.netlify/functions/companieshouse',{method:'POST',body:JSON.stringify({name:l.name,postcode:l.postcode||l.address||'',chKey:localStorage.getItem('pp_CH')||undefined})}).then(r=>r.json()).catch(()=>({})));
+  const [en,ch]=await Promise.all(jobs);
+  {const got=(en.emails||[]).join('; '); if(got||!l.manual)l.emails=got;}   // manual row: keep the CSV email if the crawl found none
+  if(en.emailsTrimmed){window.__emailsTrimmed=(window.__emailsTrimmed||0)+en.emailsTrimmed;}
+  {const c=(en.contacts||[])[0]||''; if(c||!l.manual)l.contact=c;}          // website-scraped contact (own site) — allowed
+  l.enrichNote=en.note||'';
+  if(en.siteText)l.siteText=en.siteText;
+  if(en.ownership)l.independent='N — '+en.ownership+' (site disclosure)';
+  if(en.planAR||(en.regStatus&&/APPOINTED REPRESENTATIVE/i.test(en.regStatus)&&PLAN_PROVIDERS_FE.test(en.regPrincipal||en.planProvider||''))){
+    l.planAR=true; l.planProvider=en.planProvider||en.regPrincipal||'';
+    l.regStatus='Funeral-plan AR'+(l.planProvider?' ('+l.planProvider+')':'');
+  } else if(en.regStatus){
+    l.regStatus=en.regStatus+(en.regPrincipal?' of '+en.regPrincipal:'');
+    l.aiType=/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU/i.test(en.regStatus)?'NOT INDEPENDENT':(l.aiType||'');
+  }
+  if(en.frn)l.frn=en.frn;
+  if(ch&&ch.found){
+    l.chConfidence=ch.matchConfidence||'low'; l.chMatchReason=ch.matchReason||'';
+    if(l.chConfidence==='high'){
+      // HIGH-confidence identity (name + postcode corroborated) — the number AND the director name are trustworthy.
+      if(!l.contact&&ch.officers&&ch.officers.length)l.contact=ch.officers[0].split(',').reverse().join(' ').trim();
+      l.companyNo=ch.companyNumber||''; l.sic=(ch.sicCodes||[]).join(' '); l.corporateOwners=ch.corporateOwners||[];
+      if(ch.corporateOwners&&ch.corporateOwners.length){
+        const owners=normTxt(ch.corporateOwners.join(' '));
+        const all=[...CHAINS,...$('blocklist').value.split(',')].map(normTxt).filter(Boolean);
+        l.independent=all.some(b=>owners.includes(b))?'N — group-owned':'Y (corp PSC: '+ch.corporateOwners[0]+')';
+      }else{l.independent='Y';}
+    }else{
+      // low/medium confidence: HINT only. Number held UNVERIFIED; NO ownership verdict; NO contact name.
+      l.companyNoUnverified=ch.companyNumber||'';
+      if(ch.corporateOwners&&ch.corporateOwners.length){l.chLowConfOwner=ch.corporateOwners[0];}
+    }
+  }
+  l.enriched=true;
+}
+/* ---------- STAGE 2: on-demand contact details for the TICKED keepers only ----------
+   Place Details (separate SKU, own ~5,000/mo free) buys website+phone for the leads the operator ticked
+   AFTER vetting — never automatically on every result. Then the normal crawler reads each site for an
+   email (Firecrawl/Hunter as metered fallbacks). Same discipline as Firecrawl/Hunter: pay for contact
+   data only on keepers. Logs the spend before and the hit/miss after. */
+async function getContactDetails(){
+  if(MODE!=='functions'){log('Place Details needs the Netlify deployment (functions offline).','er');return;}
+  if(running)return;
+  const ticked=LEADS.filter(l=>l.alSelect);
+  if(!ticked.length){log('Tick the vetted leads you want contact details for (✓ column) first — Place Details is bought only for the ones you tick.','er');return;}
+  const withId=ticked.filter(l=>l.placeId);
+  const noId=ticked.filter(l=>!l.placeId);
+  const need=withId.filter(l=>!l.website||!l.phone);
+  running=true;$('run').disabled=true;$('detailsBtn').disabled=true;setStats();
+  // STAGE 2a — Place Details (paid, own free allowance) for ticked leads missing website/phone
+  if(need.length){
+    log(`STAGE 2 · Place Details — about to fetch website + phone for ${need.length} ticked lead(s) (${withId.length-need.length} already have both${noId.length?`; ${noId.length} ticked have no Google place id — directory/manual rows, skipped`:''}). SEPARATE SKU with its OWN ~5,000 free calls/month (Google doesn't expose the live remaining count via API).`,'wn');
+    let got=0, miss=0, calls=0;
+    for(let i=0;i<need.length;i+=25){
+      const chunk=need.slice(i,i+25);
+      try{
+        const r=await fetch('/.netlify/functions/placedetails',{method:'POST',body:JSON.stringify({placeIds:chunk.map(l=>l.placeId),googleKey:localStorage.getItem('pp_Google')||undefined})});
+        const d=await r.json();
+        if(d.error){log('Place Details error — '+d.error,'er');break;}
+        calls+=d.calls||chunk.length;
+        const by={}; (d.results||[]).forEach(x=>by[x.placeId]=x);
+        chunk.forEach(l=>{const x=by[l.placeId]; if(!x){miss++;return;} if(x.website&&!l.website)l.website=x.website; if(x.phone&&!l.phone)l.phone=x.phone; (x.website||x.phone)?got++:miss++;});
+      }catch(e){log('Place Details batch failed — '+e.message,'er');}
+      render();setStats();
+    }
+    log(`STAGE 2 · Place Details done — ${calls} lookup(s): ${got} returned a website/phone, ${miss} had neither on Google.`,got?'ok':'wn');
+  } else if(withId.length){
+    log('STAGE 2 · Place Details — every ticked lead already has a website + phone. Nothing to buy.','ok');
+  } else {
+    log('STAGE 2 · Place Details — no ticked lead has a Google place id (directory/manual rows). Nothing to fetch.','wn');
+  }
+  // STAGE 2b — crawl the ticked sites for an email (free); Firecrawl fallback if metered
+  const toCrawl=ticked.filter(l=>l.website);
+  toCrawl.forEach(l=>l.enriched=false);   // re-crawl now they have a URL
+  if(toCrawl.length){
+    log(`Crawling ${toCrawl.length} ticked site(s) for an email…`,'wn');
+    let i=0; const cw=async()=>{ while(i<toCrawl.length){ const l=toCrawl[i++]; try{await enrichLead(l);}catch(e){l.enriched=true;} await new Promise(r=>setTimeout(r,180)); } };
+    await Promise.all([cw(),cw(),cw()]);
+    if(!($('meteredEnrich')&&!$('meteredEnrich').checked)){
+      const need2=[...new Set(toCrawl.filter(l=>!emailsOf(l).length&&l.website).map(l=>domainOf(l.website)).filter(Boolean))];
+      window.__firecrawlCache=window.__firecrawlCache||{}; const fc=window.__firecrawlCache; let fcCalls=0,fcFound=0;
+      for(const dom of need2){
+        if(fc[dom]===undefined){fcCalls++; try{const r=await fetch('/.netlify/functions/firecrawl',{method:'POST',body:JSON.stringify({domain:dom,firecrawlKey:localStorage.getItem('pp_Firecrawl')||undefined})});const d=await r.json();fc[dom]=Array.isArray(d.emails)?d.emails:[];if(d.skipped&&/no Firecrawl key/.test(d.reason||''))fc.__noKey=true;}catch(e){fc[dom]=[];} await new Promise(r=>setTimeout(r,250));}
+        const em=fc[dom]||[]; if(em.length){fcFound++;toCrawl.filter(l=>domainOf(l.website)===dom&&!emailsOf(l).length).forEach(l=>l.emails=[...new Set([...emailsOf(l),...em])].join('; '));}
+      }
+      if(need2.length&&!fc.__noKey)log(`Firecrawl (ticked only): ${fcCalls} deep-crawl(s), found an email for ${fcFound} domain(s).`,fcFound?'ok':'wn');
+    }
+  }
+  render();setStats();
+  const wWeb=ticked.filter(l=>l.website).length, wPhone=ticked.filter(l=>l.phone).length, wEmail=ticked.filter(l=>emailsOf(l).length).length, wHiName=ticked.filter(l=>l.contact&&l.chConfidence==='high').length;
+  log(`STAGE 2 complete for ${ticked.length} ticked lead(s): ${wWeb} website, ${wPhone} phone, ${wEmail} email (after crawl), ${wHiName} with a HIGH-confidence contact name. Publish when ready.`,'ok');
+  running=false;$('run').disabled=false;setStats();
+}
 async function enrichAll(){
   if(running||!LEADS.length)return;
   if(MODE!=='functions'){log('Enrichment needs the serverless functions — deploy the folder to Netlify (drag the folder CONTENTS so netlify.toml sits at the root), then reload. Search still works in browser mode.','er');return;}
@@ -1659,51 +1766,7 @@ async function enrichAll(){
   const worker=async()=>{
     while(todo.length){
       const l=todo.shift();
-      try{
-        const jobs=[];
-        jobs.push(l.website?fetch('/.netlify/functions/enrich',{method:'POST',body:JSON.stringify({website:l.website,name:l.name,town:$('town').value||'',area:l.area||'',hunterKey:localStorage.getItem('pp_Hunter')||undefined})}).then(r=>r.json()):Promise.resolve({emails:[],contacts:[]}));
-        jobs.push(fetch('/.netlify/functions/companieshouse',{method:'POST',body:JSON.stringify({name:l.name,postcode:l.postcode||l.address||'',chKey:localStorage.getItem('pp_CH')||undefined})}).then(r=>r.json()).catch(()=>({})));
-        const [en,ch]=await Promise.all(jobs);
-        {const got=(en.emails||[]).join('; '); if(got||!l.manual)l.emails=got;}   // manual row: keep the CSV email if the crawl found none
-        if(en.emailsTrimmed){window.__emailsTrimmed=(window.__emailsTrimmed||0)+en.emailsTrimmed;}
-        {const c=(en.contacts||[])[0]||''; if(c||!l.manual)l.contact=c;}          // manual row: keep the CSV contact if the crawl found none
-        l.enrichNote=en.note||'';
-        if(en.siteText)l.siteText=en.siteText;
-        if(en.ownership)l.independent='N — '+en.ownership+' (site disclosure)';
-        // AR of a funeral-plan provider (Golden Charter, Safe Hands, Golden Leaves, Ecclesiastical…) is
-        // REQUIRED since 2022 and is NEUTRAL for independence — GLOBAL RULE, never a "NOT INDEPENDENT"
-        // flag. Belt-and-braces here even if the server sent it through as a regStatus principal.
-        if(en.planAR||(en.regStatus&&/APPOINTED REPRESENTATIVE/i.test(en.regStatus)&&PLAN_PROVIDERS_FE.test(en.regPrincipal||en.planProvider||''))){
-          l.planAR=true; l.planProvider=en.planProvider||en.regPrincipal||'';
-          l.regStatus='Funeral-plan AR'+(l.planProvider?' ('+l.planProvider+')':'');
-          // do NOT set aiType='NOT INDEPENDENT' and do not lower anything — independence is ownership-only
-        } else if(en.regStatus){
-          l.regStatus=en.regStatus+(en.regPrincipal?' of '+en.regPrincipal:'');
-          l.aiType=/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU/i.test(en.regStatus)?'NOT INDEPENDENT':(l.aiType||'');
-        }
-        if(en.frn)l.frn=en.frn;
-        if(ch&&ch.found){
-          l.chConfidence=ch.matchConfidence||'low'; l.chMatchReason=ch.matchReason||'';
-          // A fuzzy CH name match may ENRICH (company number, director names) but must NEVER be sufficient to
-          // DELETE on its own — it collides in every category (the T Cribb false PSC match). Officers/number
-          // are taken regardless; ownership is only ACTED ON when the match is HIGH confidence (name + postcode).
-          if(!l.contact&&ch.officers&&ch.officers.length)l.contact=ch.officers[0].split(',').reverse().join(' ').trim();
-          if(l.chConfidence==='high'){
-            l.companyNo=ch.companyNumber||''; l.sic=(ch.sicCodes||[]).join(' '); l.corporateOwners=ch.corporateOwners||[];
-            if(ch.corporateOwners&&ch.corporateOwners.length){
-              const owners=normTxt(ch.corporateOwners.join(' '));
-              const all=[...CHAINS,...$('blocklist').value.split(',')].map(normTxt).filter(Boolean);
-              l.independent=all.some(b=>owners.includes(b))?'N — group-owned':'Y (corp PSC: '+ch.corporateOwners[0]+')';
-            }else{l.independent='Y';}
-          }else{
-            // low/medium confidence: keep the enrichment as a HINT only. Do NOT set an ownership verdict AND
-            // do NOT put the number in companyNo — an unverified CH match must never gate merges (it blocked
-            // West & Coe) or deletion. Held separately for display, never used as an identity key.
-            l.companyNoUnverified=ch.companyNumber||'';
-            if(ch.corporateOwners&&ch.corporateOwners.length){l.chLowConfOwner=ch.corporateOwners[0];}
-          }
-        }
-        l.enriched=true;done++;
+      try{ await enrichLead(l); done++;
         if(done%5===0||!todo.length){$('bar').style.width=Math.round(done/(done+todo.length)*100)+'%';setStats();render();}
       }catch(e){l.enriched=true;}
       await new Promise(r=>setTimeout(r,180));  // gentle pacing so bulk crawling doesn't trip site rate-limits
@@ -2129,6 +2192,7 @@ function updateSelCount(){
     else sc.innerHTML=sel?`You picked <b>${sel}</b> — these will be published.`+(exSel?` <span class="er">${exSel} of them were EXCLUDED by vetting.</span>`:''):'None picked yet — tick the suppliers you want in the ✓ column.';
   }
   const pb=$('publishBtn');if(pb){pb.disabled=!sel||running;pb.textContent=`▲ Publish ${sel||''} selected to AfterLife`.replace(/\s{2,}/g,' ');}
+  const db=$('detailsBtn');if(db)db.disabled=!sel||running;
 }
 function rankLeads(){
   const d=new Date(),pad=n=>String(n).padStart(2,'0');

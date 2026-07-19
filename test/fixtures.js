@@ -253,5 +253,29 @@ function foldInManual(leads, manual) {
   eq(!!m2.find(l => /barking/i.test(l.name) && l.area === "RM"), true, "manual row added even for an area the sweep never covered (no area gate)");
 }
 
+console.log("\n15. CONTACT_NAME gate: a director name is used ONLY on a HIGH-confidence Companies House match (name + postcode); an unverified (low/medium) match must leave CONTACT_NAME blank");
+// mirror of the gate in enrichLead (index.html): website-scraped contact always allowed; a CH officer name
+// is used ONLY when the match is HIGH confidence. Low/medium (fuzzy name-only) match → no contact.
+function contactNameFor(chConfidence, officers, websiteContact) {
+  let contact = websiteContact || "";
+  if (!contact && chConfidence === "high" && officers && officers.length) contact = officers[0].split(",").reverse().join(" ").trim();
+  return contact;
+}
+{
+  // the exact failures Dan reported: fuzzy name-only CH matches leaking a director as the contact
+  eq(contactNameFor("low", ["DUNKERTON, Julian Marc"], ""), "", "low-confidence CH match → CONTACT_NAME blank (no Superdry founder on a florist)");
+  eq(contactNameFor("medium", ["QURESHI, Mohammed Qadeer Shabir"], ""), "", "medium-confidence CH match → CONTACT_NAME blank");
+  eq(contactNameFor("high", ["BYRNES, Wade"], ""), "Wade BYRNES", "high-confidence CH match → director name IS the contact");
+  eq(contactNameFor("low", ["DUNKERTON, Julian"], "Jane (owner, from website)"), "Jane (owner, from website)", "a website-scraped contact is kept even when the CH match is unverified");
+  // end-to-end via chMatchConfidence: a name-only match (business postcode not corroborated) is medium → blank
+  const nameOnly = chMatchConfidence("Lamberts Flower Company", "LAMBERT & CO LIMITED", "CV1 2AB", "Registered office: 10 Some Road, London, NW1 5AB");
+  eq(nameOnly !== "high", true, "name matches but postcode doesn't corroborate → not high");
+  eq(contactNameFor(nameOnly, ["DUNKERTON, Julian Marc"], ""), "", "…so that fuzzy match populates NO contact name");
+  // a real match: name close AND registered office in the same postcode → high → contact allowed
+  const corroborated = chMatchConfidence("Lily Alley Florist", "LILY ALLEY LTD", "CO1 1AA", "Registered office: 3 High St, Colchester, CO1 1AA");
+  eq(corroborated, "high", "name close AND postcode corroborated → high");
+  eq(contactNameFor(corroborated, ["MASON, Lily"], "") !== "", true, "…so a verified match may carry the contact");
+}
+
 console.log(`\n═══ ${PASS} passed, ${FAIL} failed ═══`);
 process.exit(FAIL ? 1 : 0);
