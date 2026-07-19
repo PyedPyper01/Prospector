@@ -221,6 +221,17 @@ td a:hover{text-decoration:underline}
       <label>Load <b>register_supply.csv</b> <span class="muted">— register-verified independents; merged into every sweep of a matching area+category.</span></label>
       <input type="file" id="regSupplyFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadRegisterSupply(r.result);};r.readAsText(f);})(this.files[0])">
       <div id="regSupplyStatus" class="muted" style="font-size:12px;margin-top:6px">No register file loaded — sweeps run on discovery only.</div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:12px 0 10px">
+      <label>Optional: <b>marketplace_writeups.csv</b> <span class="muted">— attaches the ready write-up (SUMMARY) by COMPANY_ID.</span></label>
+      <input type="file" id="writeupsFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadWriteups(r.result);};r.readAsText(f);})(this.files[0])">
+      <div id="writeupsStatus" class="muted" style="font-size:12px;margin-top:6px">No write-ups loaded — profiles publish blank (editable in AfterLife).</div>
+      <label style="margin-top:12px">Publish register supply to AfterLife <span class="muted">— E&amp;W only, firms with BOTH email + website, skips classifier/chain (already verified).</span></label>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <select id="regPubArea" style="flex:1"><option value="ALL">All areas</option></select>
+        <button class="ghost small" style="width:auto;padding:8px 12px" onclick="previewRegisterPublish()">⌗ Preview</button>
+      </div>
+      <button class="primary" id="regPubBtn" style="width:100%;margin-top:6px" onclick="publishRegisterSupply()" disabled>▲ Publish register supply → AfterLife (pending)</button>
+      <div id="regPubStatus" class="muted" style="font-size:12px;margin-top:6px">Load register_supply.csv, then Preview to see counts by area.</div>
     </div>
     <div class="card">
       <h3>4½ · Manual supply <span class="muted">(suppliers you sourced by hand)</span></h3>
@@ -1331,7 +1342,84 @@ function loadRegisterSupply(text){
     try{localStorage.setItem('pp_RegisterSupply',text.length<4500000?text:'');}catch(e){}
     const st=$('regSupplyStatus'); if(st)st.textContent=`✓ ${REGISTER_SUPPLY.length} register firms · ${cats.length} categor${cats.length===1?'y':'ies'} · ${areas.length} areas`;
     log(`Register supply loaded — ${REGISTER_SUPPLY.length} register-verified counterparties across ${areas.length} area(s), categories: ${cats.slice(0,8).join(', ')}. Will merge into every sweep of a matching area.`,'ok');
+    try{refreshRegPubAreas();}catch(e){}
   }catch(e){log('Register supply parse failed — '+e.message,'er');}
+}
+/* ---------- REGISTER-SUPPLY BULK PUBLISH — E&W only, firms with email+website, direct to AfterLife.
+   No Google sweep, no classifier, no chain exclusion (rows are already register-verified). Attaches the
+   ready marketplace write-up (SUMMARY) by COMPANY_ID; carries website/phone/email/SAIF/trading-brands. */
+let MARKETPLACE_WRITEUPS={};
+// Postcode areas that are NOT England & Wales — Scotland + NI(BT) + Channel Islands(GY,JE) + IoM(IM).
+// Those jurisdictions have separate funeral legislation, so they are excluded from publishing.
+const NON_EW_AREAS=new Set(["G","EH","AB","DD","KY","ML","PA","PH","KA","DG","TD","FK","IV","KW","ZE","HS","BT","GY","JE","IM"]);
+const saifYes=v=>/^(y|yes|true|1)$/i.test(String(v||''));
+function loadWriteups(text){
+  try{
+    const rows=parseCSV(text); MARKETPLACE_WRITEUPS={};
+    rows.forEach(r=>{const id=r.COMPANY_ID||r.company_id; if(id)MARKETPLACE_WRITEUPS[id]={summary:(r.SUMMARY||'').trim(),accreditations:(r.ACCREDITATIONS||'').trim()};});
+    const withSum=Object.values(MARKETPLACE_WRITEUPS).filter(w=>w.summary).length;
+    const st=$('writeupsStatus'); if(st)st.textContent=`✓ ${Object.keys(MARKETPLACE_WRITEUPS).length} write-up rows (${withSum} with a SUMMARY).`;
+    log(`Marketplace write-ups loaded — ${withSum} firms have a ready profile (attached by COMPANY_ID at publish).`,'ok');
+  }catch(e){log('Write-ups parse failed — '+e.message,'er');}
+}
+function regPublishRows(){
+  return REGISTER_SUPPLY.filter(r=>(r.EMAIL||'').trim() && (r.WEBSITE||'').trim() && !NON_EW_AREAS.has((r.POSTCODE_AREA||'').toUpperCase()));
+}
+function regPublishByArea(){
+  const by={}; regPublishRows().forEach(r=>{const a=(r.POSTCODE_AREA||'').toUpperCase(); (by[a]=by[a]||[]).push(r);}); return by;
+}
+function refreshRegPubAreas(){
+  const sel=$('regPubArea'); if(!sel)return;
+  const by=regPublishByArea(); const areas=Object.keys(by).sort();
+  const total=Object.values(by).reduce((a,b)=>a+b.length,0);
+  sel.innerHTML=`<option value="ALL">All areas (${total})</option>`+areas.map(a=>`<option value="${a}">${a} (${by[a].length})</option>`).join('');
+  const btn=$('regPubBtn'); if(btn)btn.disabled=!total;
+  const st=$('regPubStatus'); if(st)st.textContent=total?`${total} firm(s) across ${areas.length} area(s) pass E&W + email + website. Preview for the breakdown, then Publish.`:'No register rows pass the filter yet. Load register_supply.csv.';
+}
+function previewRegisterPublish(){
+  if(!REGISTER_SUPPLY.length){log('Load register_supply.csv first (the file input above).','er');return;}
+  const by=regPublishByArea(); const areas=Object.keys(by).sort();
+  const total=Object.values(by).reduce((a,b)=>a+b.length,0);
+  const excludedNonEW=REGISTER_SUPPLY.filter(r=>NON_EW_AREAS.has((r.POSTCODE_AREA||'').toUpperCase())).length;
+  const missing=REGISTER_SUPPLY.filter(r=>!NON_EW_AREAS.has((r.POSTCODE_AREA||'').toUpperCase())&&(!(r.EMAIL||'').trim()||!(r.WEBSITE||'').trim())).length;
+  const withWU=regPublishRows().filter(r=>MARKETPLACE_WRITEUPS[r.COMPANY_ID]&&MARKETPLACE_WRITEUPS[r.COMPANY_ID].summary).length;
+  log(`REGISTER PUBLISH PREVIEW — ${REGISTER_SUPPLY.length} loaded → ${total} PASS (E&W + email + website) across ${areas.length} areas. Excluded: ${excludedNonEW} non-E&W (Scotland/NI/Channel Is/IoM), ${missing} E&W missing email or website. Write-up attached: ${withWU}, blank: ${total-withWU}.`,'ok');
+  log('  By postcode area — '+areas.map(a=>`${a}:${by[a].length}`).join('  '),'wn');
+  refreshRegPubAreas();
+}
+async function publishRegisterSupply(){
+  if(MODE!=='functions'){log('Publish needs the Netlify deployment (functions offline).','er');return;}
+  if(running){log('Busy — wait for the current action to finish.','er');return;}
+  if(!REGISTER_SUPPLY.length){log('Load register_supply.csv first.','er');return;}
+  const pick=($('regPubArea')&&$('regPubArea').value)||'ALL';
+  const by=regPublishByArea();
+  const areas=pick==='ALL'?Object.keys(by).sort():[pick];
+  const total=areas.reduce((n,a)=>n+((by[a]||[]).length),0);
+  if(!total){log('Nothing to publish for that selection.','er');return;}
+  if(!confirm(`Publish ${total} register-verified funeral director(s)${pick==='ALL'?` across ${areas.length} areas`:` in ${pick}`} to afterlife.ltd as PENDING?\n\nThey land at admin/suppliers grouped by area for your team to approve. Website, email and phone are carried through for outreach. Safe to re-run (upsert by name).`))return;
+  running=true;$('regPubBtn').disabled=true;$('run').disabled=true;setStats();
+  const mkRec=r=>{const wu=MARKETPLACE_WRITEUPS[r.COMPANY_ID]||{}; const area=(r.POSTCODE_AREA||'').toUpperCase(); const isSaif=saifYes(r.SAIF_MEMBER);
+    const cred=[]; if(isSaif)cred.push('SAIF member'); if(wu.accreditations)wu.accreditations.split(/[;,|]/).map(s=>s.trim()).filter(Boolean).forEach(c=>{if(!cred.some(x=>x.toLowerCase()===c.toLowerCase()))cred.push(c);});
+    return {name:r.COMPANY,category:'funeral-directors',categoryLabel:'Funeral directors',areas:[area],area,tier:'Local',
+      district:r.DISTRICT||'',address:r.ADDRESS||'',website:r.WEBSITE||'',description:wu.summary||'',credentials:cred,priority:99,
+      contactEmail:r.EMAIL||'',contactPhone:r.PHONE||'',companyId:r.COMPANY_ID||'',saif:isSaif?'Y':'',
+      tradingBrands:r.TRADING_BRANDS||'',verified:'register-verified'+(isSaif?' · SAIF':''),
+      notes:r.TRADING_BRANDS?('Also trades as: '+r.TRADING_BRANDS):''};};
+  let sent=0, imported=0, failedAreas=[];
+  log(`Publishing ${total} register firm(s) across ${areas.length} area(s) → AfterLife (pending)…`,'ok');
+  for(const a of areas){
+    const recs=(by[a]||[]).map(mkRec);
+    if(!recs.length)continue;
+    try{
+      const r=await fetch('/.netlify/functions/publish',{method:'POST',body:JSON.stringify({suppliers:recs})});
+      const d=await r.json();
+      if(d.ok){imported+=(d.imported||0);sent+=(d.sent||recs.length);log(`  ${a}: published ${d.imported||0}/${recs.length}${(d.errors&&d.errors.length)?` (${d.errors.length} row error(s))`:''}.`, (d.imported||0)?'ok':'wn');}
+      else{failedAreas.push(a);log(`  ${a}: FAILED — ${d.error||'unknown'}`,'er');}
+    }catch(e){failedAreas.push(a);log(`  ${a}: error — ${e.message}`,'er');}
+    await new Promise(r=>setTimeout(r,250));
+  }
+  log(`REGISTER PUBLISH COMPLETE — imported ${imported} of ${sent} sent, across ${areas.length-failedAreas.length}/${areas.length} area(s)${failedAreas.length?`; FAILED areas: ${failedAreas.join(', ')} (re-run just those from the dropdown)`:''}. Review at afterlife.ltd/admin/suppliers.`,failedAreas.length?'er':'ok');
+  running=false;$('regPubBtn').disabled=false;$('run').disabled=false;setStats();
 }
 function initRegisterSupply(){const t=localStorage.getItem('pp_RegisterSupply'); if(t){loadRegisterSupply(t);}}
 // Merge register firms for the swept areas + category into LEADS using the existing counterparty rules.

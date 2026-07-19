@@ -47,7 +47,11 @@ exports.handler = async (event) => {
       website: (l.website ? String(l.website).slice(0, 300) : null),
       _internal: {
         contactEmail: (l.contactEmail || "") || null,
+        contactPhone: (l.contactPhone || "") || null,   // carried for staff outreach; public `phone` stays null
         companyNo: (l.companyNo || "") || null,
+        companyId: (l.companyId || "") || null,
+        saif: (l.saif || "") || null,
+        tradingBrands: (l.tradingBrands || "") || null,
         verified: (l.verified || "") || null,
         notes: (l.notes || "") || null,
       },
