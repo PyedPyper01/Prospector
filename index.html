@@ -1400,7 +1400,7 @@ async function publishRegisterSupply(){
   running=true;$('regPubBtn').disabled=true;$('run').disabled=true;setStats();
   const mkRec=r=>{const wu=MARKETPLACE_WRITEUPS[r.COMPANY_ID]||{}; const area=(r.POSTCODE_AREA||'').toUpperCase(); const isSaif=saifYes(r.SAIF_MEMBER);
     const cred=[]; if(isSaif)cred.push('SAIF member'); if(wu.accreditations)wu.accreditations.split(/[;,|]/).map(s=>s.trim()).filter(Boolean).forEach(c=>{if(!cred.some(x=>x.toLowerCase()===c.toLowerCase()))cred.push(c);});
-    return {name:r.COMPANY,category:'funeral-directors',categoryLabel:'Funeral directors',areas:[area],area,tier:'Local',
+    return {id:r.COMPANY_ID||undefined,name:r.COMPANY,category:'funeral-directors',categoryLabel:'Funeral directors',areas:[area],area,tier:'Local',
       district:r.DISTRICT||'',address:r.ADDRESS||'',website:r.WEBSITE||'',description:wu.summary||'',credentials:cred,priority:99,
       contactEmail:r.EMAIL||'',contactPhone:r.PHONE||'',companyId:r.COMPANY_ID||'',saif:isSaif?'Y':'',
       tradingBrands:r.TRADING_BRANDS||'',verified:'register-verified'+(isSaif?' · SAIF':''),
