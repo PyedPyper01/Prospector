@@ -187,5 +187,71 @@ function foldInRegister(leads, register) {
   eq(!!merged.find(l => /titford/i.test(l.name)), false, "register consolidator (Titford/Dignity) → excluded, not added");
 }
 
+console.log("\n14. Manual supply: forgiving parse + required fields; manual→'manual', both→one 'both' row, discovery stays 'discovery'; verified rows immune; category maps from CATEGORY");
+// mirrors of the live manual-supply logic in index.html
+function normManualRow(r) {
+  const idx = {}; for (const k in r) idx[k.toLowerCase().replace(/[^a-z0-9]/g, "")] = r[k];
+  const g = (...keys) => { for (const k of keys) { const v = (idx[k] || "").trim(); if (v) return v; } return ""; };
+  const o = {
+    COMPANY: g("company", "businessname", "business", "name", "supplier", "firm"),
+    CONTACT_NAME: g("contactname", "contact", "person", "owner"),
+    CATEGORY: g("category", "cat", "trade", "service", "type"),
+    AREA: g("area", "postcodearea", "pcarea"), DISTRICT: g("district", "outcode"),
+    TOWN: g("town", "city", "location"), WEBSITE: g("website", "web", "url", "site"),
+    PHONE: g("phone", "tel", "telephone", "mobile", "number", "phonenumber"),
+    EMAIL: g("email", "emailaddress", "mail"), NOTES: g("notes", "note", "comment", "comments", "info")
+  };
+  const pc = g("postcode");
+  if (!o.AREA) { const src = o.DISTRICT || pc; o.AREA = (src.match(/^[A-Za-z]{1,2}/) || [""])[0]; }
+  o.AREA = (o.AREA || "").toUpperCase().replace(/[^A-Z]/g, "");
+  return o;
+}
+const MANUAL_CAT_RULES = [[/celebrant|officiant/, "celebrants"], [/funeral director|undertaker/, "funeral-directors"], [/ash scatter/, "ash-scattering"]];
+const guessCat = t => { t = (t || "").toLowerCase(); for (const [re, id] of MANUAL_CAT_RULES) if (re.test(t)) return id; return ""; };
+function foldInManual(leads, manual) {
+  leads.forEach(l => { if (!l.source) l.source = "discovery"; });
+  manual.forEach(r => {
+    const area = (r.AREA || "").toUpperCase(); const rnk = nameKey(r.COMPANY);
+    const rdom = r.WEBSITE ? regDomain(r.WEBSITE.replace(/^https?:\/\//, "")) : "";
+    const m = leads.find(l => (l.area || "").toUpperCase() === area && (
+      (rdom && l.website && regDomain(l.website.replace(/^https?:\/\//, "")) === rdom) ||
+      nameKey(l.name) === rnk || (nameKey(l.name).length >= 6 && rnk.startsWith(nameKey(l.name))) || (rnk.length >= 6 && nameKey(l.name).startsWith(rnk))));
+    if (m) { m.source = m.source === "manual" ? "manual" : "both"; m.manual = true; m.verified = true; }
+    else leads.push({ area, name: r.COMPANY, website: r.WEBSITE, source: "manual", manual: true, verified: true, enriched: false, pubCatId: guessCat(r.CATEGORY) });
+  });
+  return leads;
+}
+{
+  // forgiving parse: mixed header case/aliases, area derived from district, required-field validation
+  const raw = [
+    { Company: "Rosewood Ceremonies", Category: "Funeral celebrant", Area: "CO", Website: "https://rosewoodceremonies.co.uk" }, // website
+    { name: "Jane Field Celebrant", TYPE: "Celebrant", district: "CO7", Town: "Wivenhoe" },                                     // name+town only, area from district
+    { COMPANY: "", CATEGORY: "Celebrant", AREA: "CO" },                                                                          // missing COMPANY → skip
+    { COMPANY: "No Area Co", CATEGORY: "Celebrant" },                                                                            // missing AREA → skip
+  ].map(normManualRow).filter(r => r.COMPANY && r.CATEGORY && r.AREA);
+  eq(raw.length, 2, "required-field validation drops rows missing COMPANY/CATEGORY/AREA");
+  eq(raw[1].AREA, "CO", "AREA derived from DISTRICT when omitted (CO7 → CO)");
+  eq(guessCat(raw[0].CATEGORY), "celebrants", "CATEGORY 'Funeral celebrant' maps to marketplace 'celebrants'");
+
+  const leads = [
+    { area: "CO", name: "Rosewood Ceremonies", website: "https://www.rosewoodceremonies.co.uk" }, // already found by a sweep → both
+    { area: "CO", name: "Colchester Funeral Co", website: "https://colchesterfunerals.co.uk" },   // discovery only
+  ];
+  const merged = foldInManual(leads, raw);
+  const rose = merged.filter(l => /rosewood/i.test(l.name));
+  eq(rose.length, 1, "manual firm already in the grid → exactly ONE row");
+  eq(rose[0].source, "both", "…marked 'both'");
+  eq(rose[0].verified, true, "…flagged verified (immune to classifier + chain exclusion)");
+  const jane = merged.find(l => /jane field/i.test(l.name));
+  eq(!!jane && jane.source, "manual", "manual firm discovery didn't find → still appears, source 'manual'");
+  eq(jane.enriched, false, "…enriched:false so a website row would still be crawled");
+  eq(jane.pubCatId, "celebrants", "…carries its own publish category");
+  eq(merged.find(l => /colchester funeral/i.test(l.name)).source, "discovery", "discovery firm not in manual set → stays 'discovery'");
+  // no area gate: a manual row for an area NOT in the grid is still added (unlike register)
+  const leads2 = [{ area: "IG", name: "Ilford Funerals", source: "discovery" }];
+  const m2 = foldInManual(leads2, [normManualRow({ COMPANY: "Barking Celebrant", CATEGORY: "Celebrant", AREA: "RM" })]);
+  eq(!!m2.find(l => /barking/i.test(l.name) && l.area === "RM"), true, "manual row added even for an area the sweep never covered (no area gate)");
+}
+
 console.log(`\n═══ ${PASS} passed, ${FAIL} failed ═══`);
 process.exit(FAIL ? 1 : 0);

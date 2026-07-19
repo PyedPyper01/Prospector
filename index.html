@@ -222,6 +222,13 @@ td a:hover{text-decoration:underline}
       <input type="file" id="regSupplyFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadRegisterSupply(r.result);};r.readAsText(f);})(this.files[0])">
       <div id="regSupplyStatus" class="muted" style="font-size:12px;margin-top:6px">No register file loaded — sweeps run on discovery only.</div>
     </div>
+    <div class="card">
+      <h3>4½ · Manual supply <span class="muted">(suppliers you sourced by hand)</span></h3>
+      <label>Load a <b>manual supply CSV</b> <span class="muted">— firms you've already verified (e.g. sole-trader celebrants Google can't find). They enter the grid tagged <b>manual</b>, skip the AI classifier &amp; chain exclusion, still get enriched + written up, and publish as pending like everything else.</span></label>
+      <input type="file" id="manualSupplyFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadManualSupply(r.result);};r.readAsText(f);})(this.files[0])">
+      <div id="manualSupplyStatus" class="muted" style="font-size:12px;margin-top:6px">No manual file loaded. Required: COMPANY, CATEGORY, AREA. Optional: CONTACT_NAME, DISTRICT, TOWN, WEBSITE, PHONE, EMAIL, NOTES.</div>
+      <button class="ghost small" style="width:100%;margin-top:6px" onclick="clearManualSupply()">✕ Clear manual supply</button>
+    </div>
     <button class="primary" id="run" onclick="runSearch()">▶ Run district sweep</button>
     <button class="ghost" id="enrichBtn" onclick="enrichAll()" disabled>✦ Enrich kept leads (email · contact · ownership)</button>
     <div class="card" style="border-color:var(--acc2)">
@@ -1143,6 +1150,7 @@ function applyChainVerdicts(ctx,groupSet){
   const grp=groupSet||new Set();
   const keep=[]; const out={excluded:0, flagged:0, saifOverridden:0, byTrigger:{}, nameOnlyKept:0, removed:[]};
   for(const l of LEADS){
+    if(l.verified){keep.push(l);continue;}   // hand-sourced manual supply — pre-verified; never excluded or name-flagged
     const wd=domainOf(l.website);
     const emails=emailsOf(l);
     const chainEmails=emails.filter(e=>isChainDomain(emDom(e),set));
@@ -1362,6 +1370,105 @@ function foldInRegister(catKey,catLabel){
   const by={register:0,discovery:0,both:0}; LEADS.forEach(l=>{by[l.source]=(by[l.source]||0)+1;});
   return {loaded:true, registerOnly:by.register, discoveryOnly:by.discovery, both:by.both, addedFromRegister:added, matched, excludedChain};
 }
+/* ---------- MANUAL SUPPLY: hand-sourced suppliers ----------
+   Modelled on the register layer but: NO area/category gate (the operator curated these on purpose, and
+   Google finds nothing for the sole-trader categories they cover), NO chain exclusion, each row marked
+   verified (l.verified → immune to the AI classifier AND applyChainVerdicts) and enriched:false (so the
+   ones with a website still get crawled). Merged into discovery by the normal counterparty keys → one row
+   per firm, SOURCE = manual / both. Persists in localStorage like the register file. */
+let MANUAL_SUPPLY=[];
+function normManualRow(r){
+  const idx={}; for(const k in r) idx[k.toLowerCase().replace(/[^a-z0-9]/g,'')]=r[k];
+  const g=(...keys)=>{for(const k of keys){const v=(idx[k]||'').trim();if(v)return v;}return '';};
+  const o={
+    COMPANY:g('company','businessname','business','name','supplier','firm'),
+    CONTACT_NAME:g('contactname','contact','person','owner'),
+    CATEGORY:g('category','cat','trade','service','type'),
+    AREA:g('area','postcodearea','pcarea'),
+    DISTRICT:g('district','outcode'),
+    TOWN:g('town','city','location'),
+    WEBSITE:g('website','web','url','site'),
+    PHONE:g('phone','tel','telephone','mobile','number','phonenumber'),
+    EMAIL:g('email','emailaddress','mail'),
+    NOTES:g('notes','note','comment','comments','info')
+  };
+  const pc=g('postcode');
+  if(!o.AREA){ const src=o.DISTRICT||pc; o.AREA=(src.match(/^[A-Za-z]{1,2}/)||[''])[0]; }
+  if(!o.DISTRICT&&pc){ o.DISTRICT=(pc.match(/^[A-Za-z]{1,2}\d[A-Za-z0-9]*/)||[''])[0]; }
+  o.AREA=(o.AREA||'').toUpperCase().replace(/[^A-Z]/g,'');
+  return o;
+}
+function loadManualSupply(text,opts){
+  opts=opts||{};
+  try{
+    const rows=[], skipped=[], unmapped=[];
+    parseCSV(text).map(normManualRow).forEach(r=>{
+      if(!r.COMPANY||!r.CATEGORY||!r.AREA){skipped.push(r);return;}
+      r.catId=guessCanonicalCategory(r.CATEGORY)||'';
+      r.catLabel=(AL_CATEGORIES.find(c=>c.id===r.catId)||{}).label||r.CATEGORY;
+      if(!r.catId)unmapped.push(r.COMPANY);
+      rows.push(r);
+    });
+    MANUAL_SUPPLY=rows;
+    try{localStorage.setItem('pp_ManualSupply', text.length<2000000?text:'');}catch(e){}
+    const areas=[...new Set(rows.map(r=>r.AREA))].sort();
+    const st=$('manualSupplyStatus'); if(st)st.textContent=`✓ ${rows.length} manual supplier(s) · ${areas.length} area(s): ${areas.slice(0,12).join(', ')}${skipped.length?` · ${skipped.length} skipped (missing COMPANY/CATEGORY/AREA)`:''}`;
+    if(!opts.silent){
+      log(`Manual supply loaded — ${rows.length} hand-verified supplier(s) across ${areas.length} area(s). They skip the classifier + chain exclusion, still enrich + get written up, and publish as pending.`,'ok');
+      if(skipped.length)log(`  ${skipped.length} manual row(s) skipped — COMPANY, CATEGORY and AREA are required. First: ${skipped.slice(0,3).map(r=>r.COMPANY||'(no name)').join('; ')}`,'wn');
+      if(unmapped.length)log(`  ⚠ ${unmapped.length} manual row(s) have a CATEGORY that doesn't map to a marketplace category — those use the publish-panel category picker instead: ${unmapped.slice(0,6).join('; ')}.`,'wn');
+    }
+    if(!running){ const res=foldInManual(); render(); setStats();
+      if(!opts.silent&&res.loaded)log(`Manual supply in grid — ${res.added} added, ${res.matched} merged with existing rows. Click ✦ Enrich to crawl the ones with a website, then ⚖ Vet & Rank to write them up.`,'ok');
+    }
+  }catch(e){log('Manual supply parse failed — '+e.message,'er');}
+}
+function clearManualSupply(){
+  MANUAL_SUPPLY=[]; try{localStorage.removeItem('pp_ManualSupply');}catch(e){}
+  const before=LEADS.length;
+  LEADS=LEADS.filter(l=>!(l.manual&&l.source==='manual'));                 // drop manual-only rows
+  LEADS.forEach(l=>{ if(l.manual){ l.manual=false; l.verified=false; if(l.source==='both')l.source='discovery'; } });
+  const st=$('manualSupplyStatus'); if(st)st.textContent='No manual file loaded. Required: COMPANY, CATEGORY, AREA. Optional: CONTACT_NAME, DISTRICT, TOWN, WEBSITE, PHONE, EMAIL, NOTES.';
+  render();setStats();
+  log(`Manual supply cleared — removed ${before-LEADS.length} manual-only row(s).`,'ok');
+}
+function foldInManual(){
+  LEADS.forEach(l=>{if(!l.source)l.source='discovery';});
+  if(!MANUAL_SUPPLY.length)return {loaded:false,added:0,matched:0};
+  let added=0, matched=0;
+  MANUAL_SUPPLY.forEach(r=>{
+    const area=(r.AREA||'').toUpperCase();
+    const rnk=nameKey(r.COMPANY), rdom=domainOf(r.WEBSITE);
+    const m=LEADS.find(l=>(l.area||'').toUpperCase()===area && (
+      (rdom&&domainOf(l.website)===rdom) || nameKey(l.name)===rnk ||
+      (nameKey(l.name).length>=6&&rnk.startsWith(nameKey(l.name))) || (rnk.length>=6&&nameKey(l.name).startsWith(rnk))
+    ));
+    if(m){
+      m.source = m.source==='manual'?'manual':'both';
+      m.manual=true; m.verified=true;                       // hand-verified → immune to classifier + chain exclusion
+      if(!m.contact&&r.CONTACT_NAME)m.contact=r.CONTACT_NAME;
+      if(!emailsOf(m).length&&r.EMAIL)m.emails=r.EMAIL;
+      if(!m.phone&&r.PHONE)m.phone=r.PHONE;
+      if(!m.website&&r.WEBSITE)m.website=r.WEBSITE;
+      if(!m.town&&r.TOWN)m.town=r.TOWN;
+      if(r.NOTES)m.manualNotes=r.NOTES;
+      if(!m.pubCatId&&r.catId){m.pubCatId=r.catId;m.pubCatLabel=r.catLabel;}
+      matched++;
+    } else {
+      LEADS.push({area, district:r.DISTRICT||'?', name:r.COMPANY, address:'', postcode:r.DISTRICT||'',
+        phone:r.PHONE||'', emails:r.EMAIL||'', contact:r.CONTACT_NAME||'', website:r.WEBSITE||'', town:r.TOWN||'',
+        source:'manual', manual:true, verified:true, manualNotes:r.NOTES||'',
+        pubCatId:r.catId||'', pubCatLabel:r.catLabel||'',
+        memberships:'', register:'manual', independent:'Y',
+        sources:['manual'], foundAreas:[area], rating:null, reviews:null, types:[],
+        branchCount:1, branchPCs:[], branches:[], enriched:false});
+      added++;
+    }
+  });
+  const by={}; LEADS.forEach(l=>{by[l.source]=(by[l.source]||0)+1;});
+  return {loaded:true, added, matched, manual:by.manual||0, both:by.both||0, discovery:by.discovery||0};
+}
+function initManualSupply(){const t=localStorage.getItem('pp_ManualSupply'); if(t){loadManualSupply(t,{silent:true});}}
 async function finalizePool(pool,ctx,opts){
   opts=opts||{};
   const selectedAreas=(opts.selectedAreas||[]).map(a=>a.toUpperCase()), runFollowups=!!opts.runFollowups;
@@ -1421,6 +1528,8 @@ async function finalizePool(pool,ctx,opts){
   // Fold the register-supply layer in for the swept areas + category (one row per counterparty; SOURCE set).
   {const rs=foldInRegister(ctx.catKey||detectCategory(ctx.term),ctx.catLabel||ctx.term);
    if(rs.loaded)log(`SUPPLY SPLIT — register-verified ${rs.registerOnly+rs.both}, discovery-only ${rs.discoveryOnly}, in BOTH ${rs.both} (register added ${rs.addedFromRegister} the sweep missed; ${rs.excludedChain} register chain rows excluded).`,'ok');}
+  {const ms=foldInManual();
+   if(ms.loaded)log(`MANUAL SUPPLY — ${ms.manual} manual-only + ${ms.both} also found by discovery (merged to one row). Hand-verified: skip classifier + chain exclusion; enriched + written up like any supplier.`,'ok');}
   reportSlots('Distinct companies (sellable slots) by area, pre-vetting');
   setStats();render();
   if(runFollowups){
@@ -1555,9 +1664,9 @@ async function enrichAll(){
         jobs.push(l.website?fetch('/.netlify/functions/enrich',{method:'POST',body:JSON.stringify({website:l.website,name:l.name,town:$('town').value||'',area:l.area||'',hunterKey:localStorage.getItem('pp_Hunter')||undefined})}).then(r=>r.json()):Promise.resolve({emails:[],contacts:[]}));
         jobs.push(fetch('/.netlify/functions/companieshouse',{method:'POST',body:JSON.stringify({name:l.name,postcode:l.postcode||l.address||'',chKey:localStorage.getItem('pp_CH')||undefined})}).then(r=>r.json()).catch(()=>({})));
         const [en,ch]=await Promise.all(jobs);
-        l.emails=(en.emails||[]).join('; ');
+        {const got=(en.emails||[]).join('; '); if(got||!l.manual)l.emails=got;}   // manual row: keep the CSV email if the crawl found none
         if(en.emailsTrimmed){window.__emailsTrimmed=(window.__emailsTrimmed||0)+en.emailsTrimmed;}
-        l.contact=(en.contacts||[])[0]||'';
+        {const c=(en.contacts||[])[0]||''; if(c||!l.manual)l.contact=c;}          // manual row: keep the CSV contact if the crawl found none
         l.enrichNote=en.note||'';
         if(en.siteText)l.siteText=en.siteText;
         if(en.ownership)l.independent='N — '+en.ownership+' (site disclosure)';
@@ -1702,6 +1811,7 @@ async function enrichAll(){
   // matches). Idempotent — already-matched firms aren't re-added. Then report the final source split.
   {const c=(window.__lastCtx||{}); const rs=foldInRegister(c.catKey||detectCategory(c.term||($('term').value||'')),c.catLabel||c.term||$('term').value||'');
    if(rs.loaded)log(`SUPPLY SPLIT (final) — register-verified ${rs.registerOnly+rs.both}, discovery-only ${rs.discoveryOnly}, in BOTH ${rs.both}. Register firms carry their SAIF_MEMBER flag to export.`,'ok');}
+  {const ms=foldInManual(); if(ms.loaded)log(`MANUAL SUPPLY (final) — ${ms.manual} manual-only, ${ms.both} merged with discovery.`,'ok');}
   // POST-ENRICH contact filter: website & phone now come from enrichment (Google search no longer returns
   // them), so "must have website / phone" is enforced HERE on the enriched data instead of at sweep time.
   {const c=(window.__lastCtx||{});
@@ -1817,9 +1927,13 @@ function findLead(name){
 
 /* ---------- AI CLASSIFICATION: Claude judges every result ---------- */
 async function aiClassify(request){
+  // Hand-verified manual supply skips the classifier entirely — the operator already checked these,
+  // and Google-blind categories (celebrants etc.) would often be mis-typed by a name-based judge.
+  const pool=LEADS.filter(l=>!l.verified);
+  const skipManual=LEADS.length-pool.length;
   const batches=[];
-  for(let i=0;i<LEADS.length;i+=25)batches.push(LEADS.slice(i,i+25));
-  log(`AI classifier: Claude is judging all ${LEADS.length} results (what each business ACTUALLY is)…`,'wn');
+  for(let i=0;i<pool.length;i+=25)batches.push(pool.slice(i,i+25));
+  log(`AI classifier: Claude is judging ${pool.length} results (what each business ACTUALLY is)${skipManual?` — skipping ${skipManual} hand-verified manual supplier(s)`:''}…`,'wn');
   let idx=0, rejected=[];
   for(const batch of batches){
     try{
@@ -1839,7 +1953,7 @@ async function aiClassify(request){
       });
     }catch(e){log('AI classify batch failed — '+e.message,'er');}
     idx+=batch.length;
-    $('bar').style.width=Math.round(idx/LEADS.length*100)+'%';
+    $('bar').style.width=Math.round(idx/Math.max(1,pool.length)*100)+'%';
   }
   if(rejected.length){
     const by={};rejected.forEach(l=>{(by[l.aiType||'rejected']=by[l.aiType||'rejected']||[]).push(l.name);});
@@ -2080,6 +2194,28 @@ async function vetRank(){
     done+=batch.length;$('bar').style.width=Math.round(done/LEADS.length*100)+'%';
   }
   if(failedBatches)log(`Vet & Rank: ${failedBatches} batch(es) could not be scored — those leads are marked UNVETTED (still in the grid). ${ok?'The rest are ranked below.':''}`,'wn');
+  // Manual supply is hand-verified — the vetter is advisory only. Force APPROVE (never REVIEW/EXCLUDE/UNVETTED)
+  // so they rank as accepted, then write them up with the SAME describe.js the publish step uses, so the
+  // marketplace copy is visible in-grid exactly like any other supplier.
+  {let mv=0;LEADS.forEach(l=>{if(l.verified&&l.alVerdict!=='APPROVE'){l.alVerdict='APPROVE';l.alIndependent=true;l.alNotes=(l.alNotes?l.alNotes+' · ':'')+'hand-verified (manual supply)';mv++;}});
+   if(mv){ok=true;log(`Vet & Rank: ${mv} manual supplier(s) set APPROVE — hand-verified, the vetter never rejects them.`,'ok');}}
+  {const need=LEADS.filter(l=>l.verified&&!(l.alDescription&&l.alDescription.trim()));
+   if(need.length&&MODE==='functions'){
+     log(`Writing up ${need.length} manual supplier(s) (same write-up as any supplier; uses crawled site text where enrichment found it)…`,'wn');
+     const groups={}; need.forEach(l=>{(groups[l.pubCatLabel||l.pubCatId||'supplier']=groups[l.pubCatLabel||l.pubCatId||'supplier']||[]).push(l);});
+     for(const [label,items] of Object.entries(groups)){
+       for(let i=0;i<items.length;i+=25){const batch=items.slice(i,i+25);
+         try{
+           const r=await fetch('/.netlify/functions/describe',{method:'POST',body:JSON.stringify({
+             request:label, items:batch.map(l=>({name:l.name,website:l.website,rating:l.rating,reviews:l.reviews,credentials:l.alCredentials||'',memberships:l.memberships||'',register:l.register||'',siteText:l.siteText||''})),
+             anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+           const d=await r.json();
+           if(d.skipped){log('Manual write-up unavailable'+(d.error?' ('+d.error+')':'')+' — they still publish; copy is written at publish time or edit it in AfterLife.','wn');break;}
+           (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;if(v.description)l.alDescription=v.description;if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
+         }catch(e){log('Manual write-up batch failed — '+e.message,'wn');}
+       }
+     }
+   }}
   $('bar').style.width='100%';
   if(ok){
     rankLeads();
@@ -2144,10 +2280,16 @@ async function publishAfterLife(){
   // Publish under the CANONICAL AfterLife category id, not a free-text slug —
   // otherwise the marketplace box greys out because nothing matches the query.
   const catId=($('pubCategory').value||'').trim();
-  if(!catId){log('Pick the AfterLife category first — the dropdown just above the allocation. It must match a marketplace category, or the leads will never appear.','er');const s=$('pubCategory');if(s)s.focus();return;}
+  // A manual-supply row carries its OWN canonical category (from the CSV) in l.pubCatId — it publishes as
+  // that. The picker is only needed for rows WITHOUT one (sweep/discovery results). So require the picker
+  // only if some selected row has no per-row category.
+  const needGlobal=approve.some(l=>!l.pubCatId);
+  if(needGlobal&&!catId){log('Pick the AfterLife category first — the dropdown just above the allocation. It must match a marketplace category, or the leads will never appear. (Manual rows with a mapped CATEGORY publish as that automatically.)','er');const s=$('pubCategory');if(s)s.focus();return;}
   const catLabel=(AL_CATEGORIES.find(c=>c.id===catId)||{}).label||catId;
+  const selCats=[...new Set(approve.map(l=>l.pubCatLabel||catLabel).filter(Boolean))];
+  const catDisplay=selCats.length===1?selCats[0]:`${selCats.length} categories (${selCats.slice(0,4).join(', ')})`;
   const exSel=approve.filter(l=>l.alVerdict==='EXCLUDE').length;
-  if(!confirm(`Publish ${approve.length} selected lead(s) to afterlife.ltd as “${catLabel}” (${catId})?`+(exSel?`\n\n⚠ ${exSel} of these were EXCLUDED by vetting (group-owned / wrong trade). Publish anyway?`:'')+`\n\nThey arrive as “pending” for you to approve there. Phone & website are withheld (sent as null) — families only reach firms through AfterLife.`))return;
+  if(!confirm(`Publish ${approve.length} selected lead(s) to afterlife.ltd as “${catDisplay}”?`+(exSel?`\n\n⚠ ${exSel} of these were EXCLUDED by vetting (group-owned / wrong trade). Publish anyway?`:'')+`\n\nThey arrive as “pending” for you to approve there. Phone & website are withheld (sent as null) — families only reach firms through AfterLife.`))return;
   running=true;$('publishBtn').disabled=true;setStats();
   // Write up the picks that don't already have marketplace copy (i.e. anything you
   // chose that wasn't graded APPROVE). Claude writes each from its site facts.
@@ -2182,7 +2324,9 @@ async function publishAfterLife(){
     const primary=g.find(l=>l.alDescription&&l.alDescription.trim())||g.slice().sort((a,b)=>(a.alPriority||99)-(b.alPriority||99))[0]||g[0];
     const areas=[...new Set(g.map(l=>(l.area||'').toUpperCase().replace(/[^A-Z]/g,'')).filter(Boolean))].sort();
     const branches=[].concat(...g.map(l=>l.branches||[]));
-    return {name:primary.name,category:catId,categoryLabel:catLabel,
+    const gCatId=primary.pubCatId||catId;                                   // per-row category (manual supply) wins; else the picker
+    const gCatLabel=primary.pubCatLabel||(AL_CATEGORIES.find(c=>c.id===gCatId)||{}).label||catLabel;
+    return {name:primary.name,category:gCatId,categoryLabel:gCatLabel,
       areas, area:areas[0]||'', tier:tierFor(areas.length),
       district:primary.district||'',town,address:primary.address||'',website:primary.website||'',
       credentials:(primary.alCredentials||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean),
@@ -2449,6 +2593,7 @@ applyTheme(localStorage.getItem('pp_theme_v2')||'light');
 markKeys();
 populateCounties();
 try{initRegisterSupply();}catch(e){}
+try{initManualSupply();}catch(e){}
 log('Build v15 loaded — nothing is pre-selected; you tick your own picks, and we write up ONLY the ones you tick before sending. Click 🩺 System check to verify keys + functions before sweeping.','ok');
 </script>
 </body>
