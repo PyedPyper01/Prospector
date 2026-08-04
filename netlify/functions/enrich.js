@@ -20,15 +20,25 @@ function deobfuscate(s) {
     .replace(/\s+(at)\s+(?=[a-z0-9-]+\s*(\.|dot))/gi, "@");
 }
 function okEmail(e) { const lp = (e.split("@")[0] || ""); return !BAD.test(e) && !BAD_LOCAL.test(lp) && lp.length <= 40 && e.length <= 80; }
+// Normalise a raw match: lowercase, drop @2x retina artefacts, decode URL-encoding (a "mailto:%20info@…"
+// leaves "%20" in the visible text), then strip any leading non-alphanumeric junk from the local part so
+// "%20funerals@austins.co.uk" → "funerals@austins.co.uk".
+function cleanEmail(e) {
+  e = String(e || "").toLowerCase().replace(/^2[0-9]x/, "");
+  if (/%[0-9a-f]{2}/i.test(e)) { try { e = decodeURIComponent(e); } catch {} }
+  const at = e.indexOf("@");
+  if (at > 0) e = e.slice(0, at).replace(/^[^a-z0-9]+/, "") + e.slice(at);
+  return e.trim();
+}
 function extractEmails(html, bag) {
   const txt = deobfuscate(html);
-  (txt.match(EMAIL_RE) || []).forEach(e => { e = e.toLowerCase().replace(/^2[0-9]x/, ""); if (okEmail(e)) bag.add(e); });
+  (txt.match(EMAIL_RE) || []).forEach(e => { e = cleanEmail(e); if (e && okEmail(e)) bag.add(e); });
   // mailto: links (may be URL-encoded)
   const m = txt.match(/mailto:([^"'?\s>]+)/gi) || [];
-  m.forEach(x => { try { const e = decodeURIComponent(x.slice(7)).toLowerCase(); const g = (e.match(EMAIL_RE) || [])[0]; if (g && okEmail(g)) bag.add(g); } catch {} });
+  m.forEach(x => { try { const g = (decodeURIComponent(x.slice(7)).match(EMAIL_RE) || [])[0]; const e = cleanEmail(g); if (e && okEmail(e)) bag.add(e); } catch {} });
   // JSON-LD / schema "email": "..."
   const j = txt.match(/"email"\s*:\s*"([^"]+)"/gi) || [];
-  j.forEach(x => { const e = (x.match(EMAIL_RE) || [])[0]; if (e && okEmail(e.toLowerCase())) bag.add(e.toLowerCase()); });
+  j.forEach(x => { const e = cleanEmail((x.match(EMAIL_RE) || [])[0]); if (e && okEmail(e)) bag.add(e); });
 }
 // From the raw crawl set, keep ONLY this firm's addresses: same registrable domain as the crawled site
 // (or a subdomain of it), or a generic webmail. Cross-org domains (the achievingforchildren leak) are
@@ -96,6 +106,11 @@ const NAME_PATTERNS = [
   /(?:founder|owner|director|principal|proprietor|managing director|funeral director|partner)[:\s,–-]{1,4}([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,2})/g,
   /([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,2})[,\s–-]{1,4}(?:founder|owner|director|principal|proprietor|managing director)/g
 ];
+// A captured phrase is only a PERSON name if it's 2-3 capitalised words AND contains no business/trade
+// word. The loose patterns above otherwise grab "Sons Funeral" (from "& Sons Funeral Directors") or
+// "The Austin Family" (from "…director The Austin Family") — company blurb, not a contact.
+const NAME_BAD = /\b(funerals?|directors?|services?|family|families|sons?|daughters?|brothers?|limited|ltd|llp|plc|company|group|holdings?|chapel|homes?|memorials?|masons?|florists?|caterers?|care|team|staff|office|reception|arrangements?|independent|community|centre|center|the|and)\b/i;
+function looksPerson(nm) { return !!nm && !NAME_BAD.test(nm) && /^[A-Z][a-z'’]+(?:[ -][A-Z][a-z'’]+){1,2}$/.test(nm); }
 const UA_CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 // Some sites serve datacenter/serverless IPs a JS-only shell (bot protection) but still render full
 // HTML for Googlebot — retrying as Googlebot recovers the contact details on those sites.
@@ -151,6 +166,9 @@ exports.handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: { ...headers, "Access-Control-Allow-Headers": "*" } };
   try {
     const body = JSON.parse(event.body || "{}");
+    // Netlify Pro sync functions cap at 26s. Stop crawling at 22s and return what we have (flagged),
+    // rather than letting the whole function time out and silently lose the email, contact AND site text.
+    const started = Date.now(), BUDGET_MS = 22000;
     let { website, hunterKey } = body;
     const firmName = body.name || "", firmTown = body.town || "", firmArea = body.area || "";
     hunterKey = ((process.env.HUNTER_KEY || hunterKey || "").replace(/[^\x21-\x7E]/g, "").trim()) || null;
@@ -203,10 +221,11 @@ exports.handler = async (event) => {
     let pages = 1;
     for (const p of candidates) {
       if (pages >= 8 || (emails.size >= 2 && names.size >= 1)) break;
+      if (Date.now() - started > BUDGET_MS) { out.timedOut = true; break; }   // hit the 22s budget — return what we have
       let u; try { u = new URL(p, base.origin).href; } catch { continue; }
       if (tried.has(u)) continue; tried.add(u);
       await new Promise(r => setTimeout(r, 150));  // space page fetches so we don't trip the site's rate-limit → JS-shell
-      const pg = await fetchText(u, 9000, pageUA);
+      const pg = await fetchText(u, 7000, pageUA);
       pages++;
       if (!pg.html) continue;
       extractEmails(pg.html, emails);
@@ -214,7 +233,7 @@ exports.handler = async (event) => {
       for (const [re, grp] of OWNERSHIP) if (!out.ownership && re.test(pg.html)) out.ownership = grp;
       scanRegulatory(pg.html, out);
       const plain = pg.html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-      for (const re of NAME_PATTERNS) { let m2; const r2 = new RegExp(re.source, re.flags); while ((m2 = r2.exec(plain)) && names.size < 4) names.add(m2[1].trim()); }
+      for (const re of NAME_PATTERNS) { let m2; const r2 = new RegExp(re.source, re.flags); while ((m2 = r2.exec(plain)) && names.size < 4) { const nm = m2[1].trim(); if (looksPerson(nm)) names.add(nm); } }
     }
     if (emails.size) out.source.push("website");
 
@@ -241,7 +260,7 @@ exports.handler = async (event) => {
     // Capped, stripped site text — handed to /vetrank so Claude can read the firm's own
     // words (independence disclosures, services, credentials) without a second crawl.
     out.siteText = textParts.join(" — ").replace(/\s+/g, " ").trim().slice(0, 2600);
-    out.note = out.emails.length ? "" : `no email on ${pages} pages crawled` + (hunterKey ? " + hunter" : "");
+    out.note = out.emails.length ? "" : (out.timedOut ? `⏱ site too slow — stopped after ${pages} page(s) at the 22s budget (may have more; re-run to retry)` : `no email on ${pages} pages crawled` + (hunterKey ? " + hunter" : ""));
     return { statusCode: 200, headers, body: JSON.stringify(out) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };

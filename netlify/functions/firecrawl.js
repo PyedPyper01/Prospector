@@ -64,6 +64,21 @@ exports.handler = async (event) => {
     const key = clean(process.env.FIRECRAWL_API_KEY || body.firecrawlKey);
     if (!key) return { statusCode: 200, headers, body: JSON.stringify({ skipped: true, reason: "no Firecrawl key (set FIRECRAWL_API_KEY env var, or paste it in Settings)" }) };
 
+    // /search mode — Firecrawl relevance search to FIND a firm's website (or a fact) by name+place.
+    if (body.query) {
+      try {
+        const r = await fetch("https://api.firecrawl.dev/v1/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+          body: JSON.stringify({ query: body.query, limit: body.limit || 5 })
+        });
+        const d = await r.json().catch(() => ({}));
+        const web = (d.data && (Array.isArray(d.data) ? d.data : d.data.web)) || d.web || [];
+        const results = (Array.isArray(web) ? web : []).map(x => ({ url: x.url, title: x.title, description: x.description || "" }));
+        return { statusCode: 200, headers, body: JSON.stringify({ query: body.query, results, http: r.status, raw: results.length ? undefined : JSON.stringify(d).slice(0, 300) }) };
+      } catch (e) { return { statusCode: 200, headers, body: JSON.stringify({ query: body.query, error: e.message }) }; }
+    }
+
     let domain = String(body.domain || body.website || "").toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").trim();
     if (!domain || !/\./.test(domain)) return { statusCode: 200, headers, body: JSON.stringify({ skipped: true, reason: "no domain" }) };
     const origin = `https://${domain}`;

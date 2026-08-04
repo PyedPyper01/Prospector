@@ -26,3 +26,6 @@ Thumbs.db
 *.zip
 *.tar.gz
 dist/
+
+# stray build-staging dir created by an old deploy script
+undefined/

@@ -1,10 +1,11 @@
 // Postcode Prospector — Places search per district (Google Places API New)
-// Field mask = billing tier. websiteUri + nationalPhoneNumber are back in the mask so every sweep returns
-// a website (for the crawler to find an email) and a phone (to judge/contact the firm). This puts Text
-// Search on the ENTERPRISE tier: 1,000 free calls/month, then ~$35/1,000 (≈35 free sweeps/mo at 28
-// districts). STILL OMITTED (cost without benefit): rating, userRatingCount/reviews, opening hours.
-// The two-stage design (cheap Pro search + on-demand Place Details) remains the long-term answer.
-const FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.types,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber,nextPageToken";
+// Field mask = billing tier. DISCOVERY IS DELIBERATELY PRO-TIER: id/name/address/location/status/types only
+// — NO websiteUri or phone. That keeps Text Search on the Pro SKU (~$32/1,000, **5,000 free calls/month**),
+// vs the Enterprise SKU that website+phone force (~$35/1,000, only 1,000 free/month). You judge a lead from
+// name+address+type+register (no website needed), and fetch website+phone ONLY for the leads you tick, via
+// placedetails.js (Place Details Pro — its OWN separate 5,000 free/month). This is the two-stage design:
+// find cheaply, buy contact data only for keepers. Do NOT add websiteUri/phone back here — it 5×'s the cost.
+const FIELDS = "places.id,places.displayName,places.formattedAddress,places.location,places.businessStatus,places.types,nextPageToken";
 
 exports.handler = async (event) => {
   const headers = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };

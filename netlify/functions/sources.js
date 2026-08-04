@@ -321,6 +321,54 @@ async function vouchedfor({ districts, town, deadline }) {
   return { status: results.length ? "ok" : (blocked ? "blocked" : "empty"), results, note: `${results.length} VouchedFor adviser(s) from ${done} query point(s)` };
 }
 
+// ============================ Unbiased (browsable adviser directory) ============================
+// The old "2-firm lead funnel" verdict was the /enquiry/ path. The DIRECTORY at
+// /advisers/financial-adviser/{location} is a browsable, server-rendered list of named adviser firms
+// (~500 for a big city vs VouchedFor's ~13). Resolves BOTH an outcode (co1) and a town name; 10 firms/page,
+// ?page=N for more. Firm name comes from the /profile/…-{id} slug; enrichment fills website/contact later.
+// Mixes independents with consolidators (Fairstone, Ascot Lloyd, Evelyn Partners) — the chain blocklist
+// catches those downstream. This is the OTHER free IFA source — run it alongside VouchedFor.
+function ubName(slug){
+  const w = slug.replace(/-\d+$/, "").split("-").filter(Boolean);
+  return w.map(x => /^(llp|plc|uk|ifa)$/i.test(x) ? x.toUpperCase() : x.charAt(0).toUpperCase() + x.slice(1)).join(" ");
+}
+function ubParse(html){
+  const slugs = [...new Set((html.match(/\/profile\/financial-adviser\/[a-z0-9-]+/gi) || []).map(s => s.split("/").pop()))];
+  return slugs.map(slug => ({ slug, name: ubName(slug), url: "https://www.unbiased.co.uk/profile/financial-adviser/" + slug }));
+}
+async function unbiased({ districts, town, deadline }){
+  const queries = (districts && districts.length) ? districts.slice(0, 16) : (town ? [town] : []);
+  if (!queries.length) return { status: "empty", results: [], note: "no district/town for Unbiased" };
+  const results = [], seen = new Set(); let done = 0, blocked = false, qi = 0;
+  const PAGES = 2;  // 10 firms/page; a couple of pages per query point — breadth comes from the many outcodes
+  const worker = async () => {
+    while (qi < queries.length && Date.now() < deadline) {
+      const q = queries[qi++];
+      for (let page = 1; page <= PAGES && Date.now() < deadline; page++) {
+        const url = `https://www.unbiased.co.uk/advisers/financial-adviser/${encodeURIComponent(String(q).toLowerCase())}${page > 1 ? "?page=" + page : ""}`;
+        let r = await fetchText(url, { ms: 6000, headers: { "Accept-Language": "en-GB,en;q=0.9" } });
+        // Cloudflare blocks Netlify's datacenter IP on the normal UA — retry as Googlebot (often allow-listed).
+        if (r.code === 403 || r.code === 503) r = await fetchText(url, { ms: 6000, ua: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" });
+        done++;
+        if (r.code === 403 || r.code === 503) { blocked = true; break; }
+        if (!r.html) break;
+        const parsed = ubParse(r.html);
+        if (!parsed.length) break;
+        let fresh = 0;
+        for (const p of parsed) {
+          const k = slugify(p.name); if (!k || seen.has(k)) continue; seen.add(k); fresh++;
+          results.push(candidate({ name: p.name, address: town || "", postcode: "", phone: "", rating: null, reviews: 0, contact: "", memberType: "Unbiased adviser", sourceUrl: p.url }));
+        }
+        if (!fresh) break;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  const note = results.length ? `${results.length} Unbiased adviser(s) from ${done} page fetch(es)`
+    : (blocked ? "Unbiased's Cloudflare blocks this server's datacenter IP (works from a home connection) — scrape it locally with scratchpad/unbiased_scrape.js and import the CSV instead" : "no Unbiased results");
+  return { status: results.length ? "ok" : (blocked ? "blocked" : "empty"), results, note };
+}
+
 // ============================ RICS Find a Surveyor ============================
 // Direct JSON API (Umbraco). All six params required even when blank. Real postcodes in `address`.
 async function rics({ area, districtSet, town, deadline }) {
@@ -356,7 +404,7 @@ async function cqcSource({ area, districtSet, town, deadline, cqcKey }) {
   const partner = "PostcodeProspector";
   const list = []; let page = 1, totalPages = 1;
   while (page <= totalPages && page <= 5 && Date.now() < deadline - 2500) {
-    const j = await fetchJSON(`https://api.service.cqc.org.uk/public/v1/locations?localAuthority=${encodeURIComponent(la)}&perPage=500&page=${page}&partnerCode=${partner}`, h, 7000);
+    const j = await fetchJSON(`https://api.service.cqc.org.uk/public/v1/locations?localAuthority=${encodeURIComponent(la)}&perPage=500&page=${page}`, h, 7000);
     if (!j) { if (page === 1) return { status: "blocked", results: [], note: `CQC returned no data (check key, or localAuthority "${la}")` }; break; }
     totalPages = j.totalPages || 1;
     (j.locations || []).forEach(l => list.push(l));
@@ -367,15 +415,16 @@ async function cqcSource({ area, districtSet, town, deadline, cqcKey }) {
   const worker = async () => {
     while (li < scoped.length && Date.now() < deadline) {
       const loc = scoped[li++];
-      let rating = "", careHome = "";
+      let rating = "", careHome = "", website = "", phone = "";
       if (detailed < 45 && Date.now() < deadline - 700) {
-        const d = await fetchJSON(`https://api.service.cqc.org.uk/public/v1/locations/${loc.locationId}?partnerCode=${partner}`, h, 6000);
+        const d = await fetchJSON(`https://api.service.cqc.org.uk/public/v1/locations/${loc.locationId}`, h, 6000);
         detailed++;
-        if (d) { rating = (d.currentRatings && d.currentRatings.overall && d.currentRatings.overall.rating) || ""; careHome = d.careHome || ""; }
+        if (d) { rating = (d.currentRatings && d.currentRatings.overall && d.currentRatings.overall.rating) || ""; careHome = d.careHome || "";
+          website = (d.website || "").toString().trim(); phone = (d.mainPhoneNumber || "").toString().trim(); }
       }
       results.push(candidate({ name: loc.locationName, postcode: (loc.postalCode || "").toUpperCase(),
-        types: careHome === "Y" ? ["care_home"] : (careHome === "N" ? ["home_care"] : []),
-        memberType: rating ? `CQC ${rating}` : "CQC-registered", sourceUrl: `https://www.cqc.org.uk/location/${loc.locationId}` }));
+        website, phone, types: careHome === "Y" ? ["care_home"] : (careHome === "N" ? ["home_care"] : []),
+        memberType: rating ? `CQC ${rating}` : "CQC-registered", sourceUrl: website || `https://www.cqc.org.uk/location/${loc.locationId}` }));
     }
   };
   await Promise.all(Array.from({ length: 5 }, worker));
@@ -396,6 +445,16 @@ exports.handler = async (event) => {
     const cqcKey = ((process.env.CQC_KEY || b.cqcKey || "").replace(/[^\x21-\x7E]/g, "").trim()) || null;
     const ctx = { area, town, districts, districtSet, deadline, cqcKey };
 
+    // TEMP DEBUG — surface CQC's raw HTTP response so we can see WHY it fails (401=bad key, 403=forbidden, 400=bad param).
+    if (b.cqcRaw) {
+      const la = town || area || "Leeds";
+      const url = `https://api.service.cqc.org.uk/public/v1/locations?localAuthority=${encodeURIComponent(la)}&perPage=5&page=1&partnerCode=PostcodeProspector`;
+      let status = 0, snippet = "";
+      try { const r = await fetch(url, { headers: { "Ocp-Apim-Subscription-Key": cqcKey || "" } }); status = r.status; snippet = (await r.text()).slice(0, 300); }
+      catch (e) { snippet = "THREW: " + e.message; }
+      return { statusCode: 200, ...HDR, body: JSON.stringify({ cqcRaw: true, keyPresent: !!cqcKey, keyLen: (cqcKey || "").length, la, status, snippet }) };
+    }
+
     let out;
     switch (source) {
       case "saif":         out = await saif(ctx); break;
@@ -409,7 +468,7 @@ exports.handler = async (event) => {
       case "fca":          out = { status: "not-a-lister", results: [], note: "FCA has no geographic search — it's a per-firm permission VERIFIER; run the register-verify pass over the pool" }; break;
       case "sra":          out = { status: "not-a-lister", results: [], note: "SRA Find-a-Solicitor is reCAPTCHA-gated — use Google + the SRA verify link" }; break;
       case "step":         out = { status: "not-a-lister", results: [], note: "STEP directory is Cloudflare-gated — use Google + a verify link" }; break;
-      case "unbiased":     out = { status: "not-a-lister", results: [], note: "Unbiased is now a 2-firm lead-gen funnel — superseded by VouchedFor" }; break;
+      case "unbiased":     out = await unbiased(ctx); break;
       default:             out = { status: "not-implemented", results: [], note: `source "${source}" is configured but not yet wired` };
     }
     return { statusCode: 200, ...HDR, body: JSON.stringify({ source, ...out, count: (out.results || []).length }) };

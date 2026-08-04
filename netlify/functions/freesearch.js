@@ -33,11 +33,20 @@ const OVERPASS = [
 async function overpass(query) {
   // Cap EACH endpoint at 8s so all three attempts fit inside the function's execution budget (~26s)
   // rather than one slow mirror eating the whole timeout and killing the function.
+  //
+  // A THROTTLED Overpass replies 200 with {elements: []} — a perfectly valid empty array. The old code
+  // treated that as success and returned immediately without trying the other mirrors, so the SAME query
+  // gave 11 results or 0 at random depending on which mirror answered first. That is what made searches
+  // look broken. Empty now means "try the next mirror"; only when every mirror says empty do we accept it.
+  let sawEmpty = null;
   for (const url of OVERPASS) {
     const d = await postForm(url, "data=" + encodeURIComponent(query), 8000);
-    if (d && Array.isArray(d.elements)) return d;
+    if (d && Array.isArray(d.elements)) {
+      if (d.elements.length) return d;      // real data — done
+      sawEmpty = d;                          // possibly throttled; keep trying
+    }
   }
-  return null;
+  return sawEmpty;                           // all mirrors agree there is nothing here
 }
 
 // map a plain-English request to OSM tags
@@ -95,6 +104,10 @@ async function osm(request, district) {
   }
   const query = `[out:json][timeout:15];(${filters});out center tags 200;`;
   const d = await overpass(query);
+  // Distinguish "OpenStreetMap says there is nothing here" from "we could not reach OpenStreetMap".
+  // Both used to surface as 0 results, so a rate-limited lookup was indistinguishable from an empty area
+  // and every caller reported a confident, wrong "no firms found".
+  if (d === null) return { results: [], unavailable: true, note: "OpenStreetMap (Overpass) did not respond — it rate-limits free use. Try this area again in a minute." };
   const els = (d && d.elements) || [];
   const results = els.filter(e => e.tags && e.tags.name).map(e => {
     const t = e.tags;

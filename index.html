@@ -134,10 +134,36 @@ td a:hover{text-decoration:underline}
 </header>
 <main>
   <aside class="side">
-    <div class="card">
-      <h3>1 · Geography</h3>
+    <div class="card" style="border-color:var(--acc2)">
+      <h3>Import a saved CSV <span class="muted">(optional — only if you already have a list; otherwise start at step 1 below)</span></h3>
+      <label>Load a <b>CSV</b> <span class="muted">— firms you've sourced (e.g. an Unbiased/CQC scrape, hand-picked suppliers, or a MASTER sweep export). Enters the grid for you to review, tick and publish.</span></label>
+      <input type="file" id="manualSupplyFile" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadManualSupply(r.result);};r.readAsText(f);})(this.files[0])">
+      <label class="chk" style="margin-top:6px"><input type="checkbox" id="evalImport" checked> <b>Evaluate on import</b> — don't trust the file: Prospector runs its OWN checks (classify the trade · flag/exclude chains · Vet &amp; Rank for independence &amp; quality) and keeps EVERY row + every column for you to review. Untick = load as pre-verified (skip checks).</label>
+      <div id="manualSupplyStatus" class="muted" style="font-size:12px;margin-top:6px">No file loaded. Required: COMPANY, CATEGORY, AREA (a MASTER export's name/batchCategory/area map automatically). Optional: CONTACT_NAME, DISTRICT, TOWN, ADDRESS, WEBSITE, PHONE, EMAIL, COMPANY_NO, NOTES — plus any extra columns are preserved.</div>
+      <button class="ghost small" style="width:100%;margin-top:6px" onclick="clearManualSupply()">✕ Clear import</button>
+    </div>
+    <div class="card" style="border-color:var(--acc2)">
+      <h3>Load from database <span class="muted">(firms already stored in Prospector — sourced by you, a co-worker, or a background sweep)</span></h3>
+      <label>Trade <span class="muted">(pick one — the whole database is too big to load in a single go)</span></label>
+      <select id="dbTrade"></select>
+      <label>Area <span class="muted">(optional — one area e.g. <b>CO</b>, or blank for all areas)</span></label>
+      <input type="text" id="dbArea" placeholder="blank = all areas" style="text-transform:uppercase">
+      <button class="small" style="width:100%;margin-top:8px" onclick="loadFromDatabase()">⬇ Load stored firms into the grid</button>
+      <div id="dbLoadStatus" class="muted" style="font-size:12px;margin-top:6px">Pulls suppliers already stored in the database into the grid — same review → Vet &amp; Rank → publish flow as a CSV. Tip: untick <b>Evaluate on import</b> above to load them as-is (free, no re-checks).</div>
+      <hr style="border:none;border-top:1px solid var(--bd);margin:12px 0">
+      <label>Your tag <span class="muted">(optional — leave blank and it stamps today's date. Only needed so a bad batch can be found and removed later.)</span></label>
+      <input type="text" id="dbSaveTag" placeholder="leave blank, or e.g. jane-sourced">
+      <button class="small" style="width:100%;margin-top:8px" onclick="saveGridToDatabase()">⬆ Save the grid to the database</button>
+      <div id="dbSaveStatus" class="muted" style="font-size:12px;margin-top:6px">Writes every firm currently in the grid to the shared database, so the whole team sees them. Uses the <b>Trade</b> box above as the category. Safe to re-run — it updates rather than duplicating.</div>
+    </div>
+    <div class="card" style="display:none">
+      <h3>2 · Postcode Area Search <span class="muted">(discover live from Google / free sources)</span></h3>
       <label>Postcode area <span class="muted">(one area e.g. CO — or several e.g. <b>CO, CM, SS</b> to sweep them all)</span></label>
       <input type="text" id="area" placeholder="CO   or   CO, CM, SS, IG, RM" style="text-transform:uppercase" oninput="suggestDistricts()">
+      <label>Your request <span class="muted">(type what you want, your words — run as: <i>request + district</i>)</span></label>
+      <textarea id="term" style="min-height:64px"></textarea>
+      <label>Also exclude names containing <span class="muted">(optional, this request only)</span></label>
+      <input type="text" id="negKw">
       <label>Districts to tile <span class="muted">(auto-filled — edit freely)</span></label>
       <textarea id="districts"></textarea>
       <label>Data source <span class="muted">(free sources = £0 search cost)</span></label>
@@ -150,6 +176,7 @@ td a:hover{text-decoration:underline}
       </select>
       <label>Town <span class="muted">(used as a hint with districts, or on its own if no area given)</span></label>
       <input type="text" id="town">
+      <button class="primary" id="run" onclick="runSearch()" style="width:100%;margin-top:12px">▶ Run postcode area search</button>
       <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)">
         <label style="margin-top:0">Region sweep <span class="muted">(county → areas, or type areas — runs each area in turn)</span></label>
         <div class="row" style="gap:8px">
@@ -159,99 +186,68 @@ td a:hover{text-decoration:underline}
         <button class="ghost small" style="width:100%;margin-top:8px;border-color:var(--info);color:var(--info)" id="regionRun" onclick="runRegionSweep()">▶ Run region sweep (multi-area)</button>
       </div>
     </div>
-    <div class="card">
-      <h3>2 · Your request</h3>
-      <label>Type what you want — your words, per supplier <span class="muted">(run as: <i>request + district</i>)</span></label>
-      <textarea id="term" style="min-height:64px"></textarea>
-      <label>Also exclude names containing <span class="muted">(optional, this request only)</span></label>
-      <input type="text" id="negKw">
-    </div>
-    <div class="card">
-      <h3>3 · Rules</h3>
-      <label class="chk"><input type="checkbox" id="ruleChains" checked> Omit chains & groups (blocklist + ownership check)</label>
+    <div class="card" style="display:none">
+      <h3>2 · Rules <span class="muted">(apply to import &amp; vet)</span></h3>
+      <label class="chk"><input type="checkbox" id="ruleChains" checked> Omit chains &amp; groups (blocklist + ownership check)</label>
       <label class="chk"><input type="checkbox" id="ruleOpen" checked> Operational businesses only</label>
-      <label class="chk"><input type="checkbox" id="ruleArea" checked> Strict area match — drop results whose postcode is outside the searched area</label>
-      <label class="chk"><input type="checkbox" id="aiClassify" checked> <b>AI classify every result</b> — Claude judges what each business actually is (catches mortgage brokers, chains, wrong trades)</label>
-      <label class="chk"><input type="checkbox" id="areaLevel"> <b>Area-level sweep</b> — one call per area on its main town ("florists in Colchester"), keep all results; falls back to district tiling only if an area yields &lt;5 after vetting</label>
-      <label class="chk"><input type="checkbox" id="autoEnrich" checked> Auto-enrich after sweep (emails · contacts · ownership purge)</label>
-      <label class="chk"><input type="checkbox" id="meteredEnrich" checked> Metered enrichment (Firecrawl + Hunter) <span class="muted">— uncheck for free/cheap validation runs</span></label>
-      <div class="row">
+      <label class="chk"><input type="checkbox" id="ruleArea" checked> Strict area match (drop results outside the searched area)</label>
+      <label class="chk"><input type="checkbox" id="ruleWeb"> Must have a website</label>
+      <label class="chk"><input type="checkbox" id="rulePhone"> Must have a phone</label>
+      <label class="chk"><input type="checkbox" id="aiClassify" checked> AI classify every result (Claude catches wrong trades &amp; chains)</label>
+      <label class="chk"><input type="checkbox" id="areaLevel"> Area-level sweep (spread centres per area — cheaper, wider than the main town)</label>
+      <label class="chk"><input type="checkbox" id="autoEnrich" checked> Auto-enrich after a search (emails · contacts · ownership purge)</label>
+      <label class="chk"><input type="checkbox" id="meteredEnrich"> Metered enrichment — Firecrawl + Hunter (uncheck for free/cheap runs)</label>
+      <div class="row" style="margin-top:10px">
         <div><label>Min reviews</label><input type="number" id="minRev" value="0" min="0"></div>
         <div><label>Min rating</label><input type="number" id="minRate" value="0" min="0" max="5" step="0.1"></div>
+        <div><label>Funnel cap</label><input type="number" id="cap" value="0" min="0"></div>
       </div>
-      <label class="chk"><input type="checkbox" id="ruleWeb"> Must have website</label>
-      <label class="chk"><input type="checkbox" id="rulePhone"> Must have phone</label>
-      <label>Your exclusions <span class="muted">(optional — or just write them in your request: "omit …", "exclude …")</span></label>
+      <label style="margin-top:10px">Your exclusions <span class="muted">(optional — or write them in your request: "omit …", "exclude …")</span></label>
       <textarea id="blocklist"></textarea>
-      <label>Funnel cap <span class="muted">(stop after N kept leads · 0 = no cap)</span></label>
-      <input type="number" id="cap" value="0" min="0">
     </div>
     <div class="card">
-      <h3>4 · Verify (optional)</h3>
-      <label>Trade-register members <span class="muted">(paste names — e.g. SAIF, NAFD, Humanists UK. One per line or comma-separated)</span></label>
-      <textarea id="register" style="min-height:70px"></textarea>
-      <label>Register name <span class="muted">(shown as the badge)</span></label>
-      <input type="text" id="registerName">
-      <button class="ghost small" style="width:100%;margin-top:8px" onclick="crossReference()">✓ Cross-reference kept leads</button>
-      <label style="margin-top:14px">Companies House universe check <span class="muted">(SIC code — 96030 = funeral activities, 47760 = florists, 69102 = solicitors)</span></label>
-      <input type="text" id="sic">
-      <button class="ghost small" style="width:100%;margin-top:8px" onclick="universeCheck()">◎ Show full registered universe & coverage</button>
-      <label style="margin-top:14px">Official register check <span class="muted">(picks the right authority for what you searched)</span></label>
-      <button class="ghost small" style="width:100%" onclick="verifyRegister()">⚖ Verify against the governing register (auto-detects FCA / CQC / FSA / EA / Charity / SRA)</button>
-    </div>
-    <div class="card">
-      <h3>4½ · Batch queue <span class="muted">(unattended matrix of areas × categories)</span></h3>
-      <label>Categories — one request per line <span class="muted">(each line run exactly as typed)</span></label>
-      <textarea id="batchCats" style="min-height:80px" placeholder="funeral directors&#10;florists&#10;probate solicitors"></textarea>
-      <label>Postcode areas <span class="muted">(comma-separated, or <b>ALL</b> for every England &amp; Wales area)</span></label>
-      <input type="text" id="batchAreas" value="ALL" style="text-transform:uppercase">
+      <h3>1 · Find suppliers <span class="muted">(pick a trade + areas — Prospector picks the source automatically)</span></h3>
+      <label>Supplier type <span class="muted">(the marketplace's own categories — picking from the list keeps every run under the same name)</span></label>
+      <select id="sweepTrade"></select>
       <div class="row" style="gap:8px">
-        <div><label>Pages/district</label><select id="batchPages"><option value="1" selected>1 (cheapest)</option><option value="2">2</option><option value="3">3</option></select></div>
-        <div><label>Enrich each</label><select id="batchEnrich"><option value="1" selected>Yes</option><option value="0">No (faster)</option></select></div>
+        <div><label>Keep per area</label><input type="number" id="sweepN" value="10" min="1"></div>
       </div>
-      <button class="ghost small" style="width:100%;margin-top:8px" onclick="estimateBatch()">⌗ Estimate size &amp; cost first</button>
-      <button class="ghost small" style="width:100%;margin-top:6px" onclick="startBatch()">⏩ Start batch queue</button>
-      <button class="ghost small" style="width:100%;margin-top:6px" onclick="BATCH.stop=true">⏹ Stop after current job</button>
-      <button class="ghost small" style="width:100%;margin-top:6px" onclick="exportMaster()">⬇ Export MASTER (all jobs so far)</button>
-      <button class="ghost small" style="width:100%;margin-top:6px" onclick="resetBatch()">↺ Reset batch progress</button>
-      <label style="margin-top:12px">Webhook URL <span class="muted">(optional — POSTs each completed area+category as JSON)</span></label>
-      <input type="text" id="webhook" placeholder="https://…">
+      <label>Areas <span class="muted">(blank = whole country · or a few: <b>CO, CM, SS</b> · one for a quick test)</span></label>
+      <input type="text" id="sweepAreas" placeholder="blank = all 104 E&W areas" style="text-transform:uppercase">
+      <label class="chk"><input type="checkbox" id="sweepSpread" checked> Spread — 1 per postcode district, then go round again</label>
+      <label class="chk"><input type="checkbox" id="sweepSkipTaken" checked> Skip firms already captured for this trade <span class="muted">(so re-runs return the NEXT batch)</span></label>
+      <button class="primary" id="sweepRunBtn" onclick="runNationalSweep()" style="width:100%;margin-top:8px">▶ Run sweep</button>
+      <button class="ghost small" id="sweepStopBtn" onclick="SWEEP.stop=true" style="width:100%;margin-top:6px">⏹ Stop</button>
+      <div id="sweepStatus" class="muted" style="font-size:12px;margin-top:8px">Type a supplier type + areas and press Run. Prospector auto-sources it — <b>Companies House</b> (free) for registered trades; for sole-trader trades (celebrants, florists, locksmiths) it uses <b>Google</b>, which returns them <i>with their website</i>. The status shows which it picked.</div>
+      <button class="ghost small" id="sweepDlBtn" onclick="downloadSweep('main')" disabled style="width:100%;margin-top:6px">⬇ Download capture CSV <span class="muted">(≤N per area — import-ready)</span></button>
+      <button class="ghost small" id="sweepDlResBtn" onclick="downloadSweep('reserve')" disabled style="width:100%;margin-top:6px">⬇ Download reserve CSV <span class="muted">(the overflow)</span></button>
+      <button class="primary" id="sweepLoadBtn" onclick="loadSweepIntoGrid()" disabled style="width:100%;margin-top:6px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">→ Load captured into the grid <span class="muted">(then ✦ Enrich → ⚖ Vet &amp; Rank → publish)</span></button>
+      <button class="ghost small" onclick="clearSweepTaken()" style="width:100%;margin-top:6px">↺ Clear "already captured" for this trade</button>
     </div>
-    <div class="card">
-      <h3>4¾ · Register supply <span class="muted">(from the Email Lead Generator)</span></h3>
-      <label>Load <b>register_supply.csv</b> <span class="muted">— register-verified independents; merged into every sweep of a matching area+category.</span></label>
-      <input type="file" id="regSupplyFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadRegisterSupply(r.result);};r.readAsText(f);})(this.files[0])">
-      <div id="regSupplyStatus" class="muted" style="font-size:12px;margin-top:6px">No register file loaded — sweeps run on discovery only.</div>
-      <hr style="border:none;border-top:1px solid var(--line);margin:12px 0 10px">
-      <label>Optional: <b>marketplace_writeups.csv</b> <span class="muted">— attaches the ready write-up (SUMMARY) by COMPANY_ID.</span></label>
-      <input type="file" id="writeupsFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadWriteups(r.result);};r.readAsText(f);})(this.files[0])">
-      <div id="writeupsStatus" class="muted" style="font-size:12px;margin-top:6px">No write-ups loaded — profiles publish blank (editable in AfterLife).</div>
-      <label style="margin-top:12px">Publish register supply to AfterLife <span class="muted">— E&amp;W only, firms with BOTH email + website, skips classifier/chain (already verified).</span></label>
-      <div style="display:flex;gap:6px;margin-top:4px">
-        <select id="regPubArea" style="flex:1"><option value="ALL">All areas</option></select>
-        <button class="ghost small" style="width:auto;padding:8px 12px" onclick="previewRegisterPublish()">⌗ Preview</button>
-      </div>
-      <button class="primary" id="regPubBtn" style="width:100%;margin-top:6px" onclick="publishRegisterSupply()" disabled>▲ Publish register supply → AfterLife (pending)</button>
-      <div id="regPubStatus" class="muted" style="font-size:12px;margin-top:6px">Load register_supply.csv, then Preview to see counts by area.</div>
-    </div>
-    <div class="card">
-      <h3>4½ · Manual supply <span class="muted">(suppliers you sourced by hand)</span></h3>
-      <label>Load a <b>manual supply CSV</b> <span class="muted">— firms you've already verified (e.g. sole-trader celebrants Google can't find). They enter the grid tagged <b>manual</b>, skip the AI classifier &amp; chain exclusion, still get enriched + written up, and publish as pending like everything else.</span></label>
-      <input type="file" id="manualSupplyFile" accept=".csv" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadManualSupply(r.result);};r.readAsText(f);})(this.files[0])">
-      <div id="manualSupplyStatus" class="muted" style="font-size:12px;margin-top:6px">No manual file loaded. Required: COMPANY, CATEGORY, AREA. Optional: CONTACT_NAME, DISTRICT, TOWN, WEBSITE, PHONE, EMAIL, NOTES.</div>
-      <button class="ghost small" style="width:100%;margin-top:6px" onclick="clearManualSupply()">✕ Clear manual supply</button>
-    </div>
-    <button class="primary" id="run" onclick="runSearch()">▶ Run district sweep</button>
-    <button class="ghost" id="enrichBtn" onclick="enrichAll()" disabled>✦ Enrich kept leads (email · contact · ownership)</button>
     <div class="card" style="border-color:var(--acc2)">
-      <h3>5 · AfterLife vetting</h3>
-      <p style="font-size:12.5px;color:var(--dim);line-height:1.5;margin:-2px 0 10px">Run after classify, register-verify &amp; enrich. Claude checks independence (blocklist · Companies House PSC · site small-print), scores bereavement fit &amp; quality, ranks, and writes marketplace copy for approvals.</p>
-      <button class="primary" id="vetBtn" onclick="vetRank()" disabled style="background:linear-gradient(135deg,var(--info),#2b7fc4)">⚖ Vet &amp; Rank surviving leads</button>
+      <h3>2 · Vet &amp; publish</h3>
+      <p style="font-size:12.5px;color:var(--dim);line-height:1.5;margin:-2px 0 10px">Claude checks independence (blocklist · Companies House PSC · site small-print), scores bereavement fit &amp; quality, ranks and writes the marketplace copy. Then enrich the keepers for contacts, and publish the ones you tick.</p>
+      <button class="primary" id="vetBtn" onclick="vetRank()" disabled style="width:100%;background:linear-gradient(135deg,var(--info),#2b7fc4)">⚖ Vet &amp; Rank surviving leads</button>
+      <button class="primary" id="findFreeBtn" onclick="findWebsitesFree()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">🔎 Find websites FREE <span class="muted">(£0 — runs from your browser, guesses each site &amp; checks it's live. Do this first.)</span></button>
+      <button class="primary" id="findWebBtn" onclick="findWebsitesClaude()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#7a5cff,#5b3fd6)">🔎 Top up the rest with Claude <span class="muted">(~2p/firm — only the ones the free finder missed)</span></button>
+      <button class="primary" id="enrichBtn" onclick="enrichAll()" disabled style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">✦ Enrich kept leads (email · contact · ownership)</button>
       <button class="ghost small" id="rankedCsvBtn" onclick="exportRanked()" disabled style="width:100%;margin-top:8px">⬇ Export ranked CSV (all leads + AL columns)</button>
+      <div style="border:1px dashed var(--line);border-radius:8px;padding:8px;margin-top:8px">
+        <div class="muted" style="font-size:11.5px;margin-bottom:4px"><b>Free route</b> — instead of the paid button above, copy the names into <b>your own Claude</b> (free on your subscription), ask it for the websites, and paste back:</div>
+        <button class="ghost small" id="copyNoWebBtn" onclick="copyNoWebsite()" style="width:100%">⧉ 1. Copy firms needing a website</button>
+        <button class="ghost small" id="fillEmailBtn" onclick="fillEmailsPaste()" style="width:100%;margin-top:6px">⧉ 2. Paste websites (&amp; emails) back in</button>
+      </div>
+      <button class="ghost small" id="copyNoEmailBtn" onclick="copyNoEmail()" style="display:none;width:100%;margin-top:6px">⧉ Copy companies with NO email (to source manually)</button>
+      <button class="ghost small" id="keepSelBtn" onclick="keepOnlySelected()" style="width:100%;margin-top:6px">✂ Keep ONLY ticked (rest → excluded, so Enrich runs on your picks only)</button> <button class="ghost small" id="removeSelBtn" onclick="removeSelected()" style="width:100%;margin-top:6px">✕ Remove selected rows (ticked → excluded)</button>
       <label style="margin-top:14px">AfterLife category <span class="muted">(what these publish AS — must exactly match a marketplace category, or they'll never show)</span></label>
       <select id="pubCategory" onchange="pubCategoryTouched=true;updateSelCount()" style="width:100%;margin-top:4px"></select>
       <div id="pubCatHint" class="muted" style="font-size:11.5px;margin-top:4px">Set your request above and this auto-fills.</div>
       <div id="selCount" class="muted" style="font-size:12px;margin-top:10px">Nothing is pre-selected. After Vet &amp; Rank, tick the suppliers you want in the ✓ column — the count you pick shows here.</div>
+      <div class="row" style="gap:8px;margin-top:8px;align-items:flex-end">
+        <div style="flex:0 0 84px"><label style="margin:0">Per area</label><input type="number" id="pubPerArea" value="10" min="1" style="width:100%"></div>
+        <button class="ghost small" onclick="selectTopPerArea(+(($('pubPerArea')||{}).value||10))" style="flex:1;margin:0">✓ Tick top N in every area</button>
+      </div>
+      <button class="ghost small" onclick="sortBy('area')" style="width:100%;margin-top:6px">⧉ Group grid by area (best-first within each)</button>
       <button class="ghost small" id="detailsBtn" onclick="getContactDetails()" disabled style="width:100%;margin-top:8px">☎ Get contact details for selected <span class="muted">(Google Place Details + crawl)</span></button>
       <div class="muted" style="font-size:11px;margin-top:3px">Buys website + phone (separate Place Details SKU, own 5,000/mo free) only for the ticked keepers, then crawls each site for an email.</div>
       <button class="ghost small" id="publishBtn" onclick="publishAfterLife()" disabled style="width:100%;margin-top:8px">▲ Publish selected to AfterLife</button>
@@ -264,15 +260,16 @@ td a:hover{text-decoration:underline}
       <div class="pill g"><b id="sKept">0</b><span>kept leads</span></div>
       <div class="pill r" style="cursor:pointer" onclick="showDropped()" title="Click to see what was excluded and why"><b id="sExcl">0</b><span>excluded ⓘ</span></div>
       <div class="pill y"><b id="sEnriched">0</b><span>enriched</span></div>
+      <button class="ghost small" onclick="restoreExcluded()" title="Bring every excluded row back into the grid (each tagged with why it was excluded)" style="align-self:center">↩ Restore excluded</button>
     </div>
     <div class="prog"><i id="bar"></i></div>
     <div id="regionPanel" style="display:none"></div>
-    <div style="display:flex;gap:8px;margin-bottom:10px">
+    <div style="display:none;gap:8px;margin-bottom:10px">
       <input type="text" id="findName" placeholder="Missing a supplier? Type its name to find out why…" style="flex:1">
       <button class="ghost small" onclick="findLead(document.getElementById('findName').value)">Why isn't it here?</button>
     </div>
-    <div id="log">Ready. Set your keys in Settings, pick an area + category, and run.</div>
-    <div id="results"><div class="empty"><b>No sweep run yet</b>Tile a postcode area to populate the lead grid.</div></div>
+    <div id="log">Ready. In step 1, type a supplier type + areas and press Run — Prospector picks the source for you.</div>
+    <div id="results"><div class="empty"><b>No results yet</b>Run a search in step 1 to fill the grid.</div></div>
   </section>
 </main>
 
@@ -381,13 +378,54 @@ const PLAN_PROVIDERS_FE=/golden charter|golden leaves|ecclesiastical|pride plann
 const DEFAULT_CONSOLIDATORS=`St. James's Place | sjp.co.uk
 Amber River
 Knights Group
-Fairstone
-Perspective Financial
-Kingswood
-Quilter
-True Potential
-Openwork
-NFU Mutual
+Fairstone | fairstone.co.uk
+Perspective Financial | pfgl.co.uk
+Kingswood | kingswood-group.com
+Quilter | quilter.com
+True Potential | tpllp.com
+Openwork | openwork.uk.com
+NFU Mutual | nfumutual.co.uk
+Brewin Dolphin | brewin.co.uk
+RBC Brewin Dolphin | brewin.co.uk
+Ascot Lloyd | ascotlloyd.co.uk
+Bellpenny
+Evelyn Partners | evelyn.com
+Tilney | tilney.co.uk
+Smith & Williamson | smithandwilliamson.com
+The Private Office | tpofinancial.com
+Continuum | mycontinuum.co.uk
+Flying Colours | flyingcolourswealth.com
+Progeny | theprogenygroup.com
+Foster Denovo | fosterdenovo.com
+AFH Wealth Management | afhwm.co.uk
+Succession Wealth | successionwealth.co.uk
+Wren Sterling | wrensterling.com
+Mattioli Woods | mattioliwoods.com
+Titan Wealth | titanwh.com
+Skerritts | skerritts.co.uk
+Chase de Vere | chasedevere.co.uk
+Frenkel Topping | frenkeltopping.co.uk
+Saltus | saltus.co.uk
+Brooks Macdonald | brooksmacdonald.com
+Charles Stanley | charles-stanley.co.uk
+Rathbones | rathbones.com
+Investec Wealth | investec.com
+Canaccord Genuity | canaccordgenuity.com
+Close Brothers Asset Management | closebrothersam.com
+Hargreaves Lansdown | hl.co.uk
+Atomos | atomos.co.uk
+Schroders Personal Wealth | spw.com
+Old Mutual Wealth
+Sanlam
+Tenet | tenetgroup.co.uk
+2plan | 2plan.com
+Sense Network | sense-network.co.uk
+Best Practice | bestpracticeifa.co.uk
+In Partnership | inpartnership.co.uk
+LEBC | lebc-group.com
+Attivo | attivogroup.co.uk
+Cooper Parry Wealth | cooperparry.com
+Isio | isio.com
 Dignity
 Co-op Funeralcare
 Funeral Partners
@@ -502,6 +540,54 @@ function addConfirmedChain(name,area,parent,evidence){
   return true;
 }
 const emDom=e=>((String(e).split('@')[1])||'').toLowerCase();
+// ---- FUNERAL PARTNERS (added 2026-07-20) — they white-label 152 branches under local names on separate
+// domains, so neither the brand token nor a shared domain fires. Source: funeralpartners.co.uk brand
+// directory (WP /wp-json/wp/v2/brand) + scraped branch domains. FP_NAME_KEYS excludes 14 keys that
+// collide with register independents (FP firms are never SAIF/NAFD) — those are caught by domain only. ----
+const FP_DOMAINS=new Set([
+  'aaronblackfunerals.co.uk','abbotsfieldfunerals.co.uk','agresty.co.uk','ahrogers.co.uk',
+  'ashdownfuneralservices.co.uk','asmithfunerals.co.uk','ayeatmanfunerals.co.uk',
+  'barrypritchardfuneralservices.co.uk','bexleyfuneralservice.co.uk','blackheathfuneralservices.co.uk',
+  'blenkirons.co.uk','boxbros.co.uk','burgessandharper.co.uk','chadwicksfuneralservice.com',
+  'clbirkettandson.co.uk','cleggfunerals.co.uk','dartford-funeralservice.co.uk','dawebrothers.co.uk',
+  'dovesfunerals.co.uk','earlandcofunerals.co.uk','egillandsons.co.uk','elizabeth-way.co.uk',
+  'esargeant.co.uk','frankdooley.co.uk','gibsonsfs.co.uk','gillmanfunerals.co.uk','gmgooldfunerals.co.uk',
+  'godalmingfuneralservice.co.uk','gordonfletcher.co.uk','gwturner.co.uk','havenfunerals.co.uk',
+  'hawes-goodchild.co.uk','hemmingandpeace.co.uk','henryison.co.uk','hodgesfunerals.co.uk',
+  'howardsfuneraldirectors.co.uk','humphrisfunerals.co.uk','huntleysfunerals.co.uk','jamesandthomas.co.uk',
+  'johnnodes.co.uk','josephoconnell.co.uk','kavanaghandcoates.co.uk','kempandstevens.co.uk',
+  'knoxbrosfunerals.co.uk','knoxfunerals.co.uk','matthewsfunerals.co.uk','mearsandcotterill.co.uk',
+  'merstowgreen.co.uk','michaelkennedyfuneralservices.co.uk','milesfunerals.com','mmbroadandson.co.uk',
+  'murraysfunerals.co.uk','patrick-ryan.co.uk','paulcapperfunerals.co.uk','pinksfunerals.co.uk',
+  'quinnsfuneraldirectors.co.uk','raymondmasseyandson.co.uk','robertnuttallfuneralservice.co.uk',
+  'royquinton.co.uk','rushtonfuneraldirectors.co.uk','simonbarningham.co.uk','simply-funerals.co.uk',
+  'smithsfunerals.co.uk','stevenmears.co.uk','themartinsfuneraldirectors.co.uk','thomasbragg.co.uk',
+  'thorneleggett.co.uk','traffordlowefuneralservices.co.uk','turnersfuneralservice.co.uk','tw-boorman.co.uk',
+  'whitedovefuneralhome.co.uk','whputnam.co.uk','williamhpainter.co.uk','wnallcockfuneralservices.co.uk',
+  'wokingfunerals.co.uk','wsherryandsons.co.uk','wythenshawefuneralservices.co.uk'
+]);
+const FP_NAME_KEYS=new Set([
+  'aaronblack','abbotsfield','adairneely','ahrogers','anabraham','andrewgrey','arthurcambrey',
+  'arthurgrestyho','ashdown','avridout','ayeatman','bairdsofantrim','banfieldpomphr','barrypritchard',
+  'bexley','bmatthews','boxbros','burgessharper','burnham','caerphilly','chambersbright','choice',
+  'chriswhite','clbirkett','crowsons','cthull','ctradmall','darenpersson','dartford','dawebrothers','diamond',
+  'eaves','egill','elizabethway','epeart','esargeant','exeterdistrict','farthing','fcurtis','firmager',
+  'frankdooley','gehartley','georgebrooke','georgesteele','ghdovener','gillman','gmgoold','godalming',
+  'gordonfletcher','grahamjclegg','gwturner','hammertons','harpins','hemmingpeace','henryison',
+  'houstonwilliam','howardchadwick','howards','humphris','huntleys','ianbrown','jamesbrown','jamesdykes',
+  'jameshawesgood','jamesthomas','jdlawson','jhway','jlsturney','johnblenkiron','johnclark','johnghogg',
+  'johngray','johnnodes','johnroach','josephahey','josephoconnell','josephpoots','kavanaghcoates',
+  'kempstevens','knoxbros','lchill','malonefox','martins','maunders','mearscotterill','meliapowell',
+  'merstowgreenho','michaelgamble','michaelgryanda','michaelkennedy','milesdaughters','mlwilliams','mmbroad',
+  'mrushton','mulhollands','murrays','nicholasohara','patrickryandau','paulcapper','personalchoice','pinks',
+  'quinns','raymondmassey','richardlloyd','royquinton','sandyclose','shieldsofdonag','simonbarningha',
+  'slaithwaite','ssmith','sterry','stevenmears','tafyfe','thomasbragg','thorneleggett','tobyhunt',
+  'torbaydistrict','traffordlowe','turners','twboorman','wakefield','walkermorrell','watersidehome',
+  'wfgroombridge','whitedovehome','whodges','whputnam','williamhpainte','wmdodgson','wnallcock','woking',
+  'wombwell','wsherry','wstorey','wythenshawe'
+]);
+function fpBrandHit(name,dom){ if(dom && FP_DOMAINS.has(String(dom).toLowerCase().replace(/^www\./,'')))return 'Funeral Partners'; const nk=nameKey(name||''); if(nk.length>=5){ for(const k of FP_NAME_KEYS){ if(nk===k||nk.startsWith(k)||(k.length>=6&&k.startsWith(nk)&&nk.length>=6))return 'Funeral Partners'; } } return null; }
+
 /* ---------- FOREIGN (non-UK) rejection: a row with no UK postcode, or a foreign country / US-state /
    Canadian-province marker in its address, is not a UK firm — rejected before it enters the pool. ---------- */
 const UK_PC_RE=/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i;
@@ -509,16 +595,29 @@ const FOREIGN_RE=/\b(?:USA|U\.?S\.?A|United States|Canada|Ontario|Quebec|Manitob
 function isUKAddress(addr,pc){const s=((pc||'')+' '+(addr||''));if(!UK_PC_RE.test(s))return false;if(FOREIGN_RE.test(addr||''))return false;return true;}
 /* ---------- SOURCE ROUTER (editable per-category source list, like the blocklist) ---------- */
 const DEFAULT_SOURCE_ROUTER=`funeral: saif, nafd, funeralguide, localfuneral, google
-ifa: vouchedfor, google
+ifa: vouchedfor, unbiased, google
+financial: vouchedfor, unbiased, google
+care: google
+domiciliary: google
+nursing: google
+residential: google
 solicitor: google
-care: cqc, google
+probate: google
+will: google
 surveyor: rics, google
 florist: google
 celebrant: google
 caterer: google
+wedding: google
+venue: google
+memorial: google
+mason: google
+photographer: google
+estate: google
+clearance: google
 default: google`;
 // sources with a server-side fetcher wired today (others log a reason and fall back gracefully)
-const WIRED_SOURCES=['saif','nafd','funeralguide','localfuneral','cqc','vouchedfor','rics','google'];
+const WIRED_SOURCES=['saif','nafd','funeralguide','localfuneral','cqc','vouchedfor','unbiased','rics','google'];
 /* ---------- county → postcode-areas mapping for the region sweep (editable in Settings) ---------- */
 // COMPLETE England & Wales coverage — all 104 postcode areas appear in at least one county below
 // (some areas straddle counties, so they intentionally appear in more than one). Editable in Settings.
@@ -596,7 +695,10 @@ function parseSourceRouter(){
 // map a free-text request to a category key used by the router
 function detectCategory(term){
   const t=(term||'').toLowerCase();
-  if(/funeral|undertaker|cremation/.test(t))return 'funeral';
+  // FUNERAL DIRECTORS only. Must be the director/home/undertaker trade itself — NOT any phrase that merely
+  // contains the word "funeral". "funeral musicians", "funeral florist", "funeral photographer" are their
+  // OWN trades and must NOT route here (which would fold the funeral-director register into them).
+  if(/\bundertaker|\bcrematori(?:um|a)|\bfuneral\s+(?:director|home|service|parlour|parlor|arrang)|^\s*funerals?\s*$/.test(t))return 'funeral';
   if(/\bifas?\b|financial advis|wealth manage|pension advis|estate planning|later[- ]life|equity release/.test(t))return 'ifa';
   if(/solicitor|probate|conveyanc|lawyer|legal|will writer|will writing/.test(t))return 'solicitor';
   if(/care home|home care|domiciliary|carer|nursing home|live[- ]?in care/.test(t))return 'care';
@@ -704,7 +806,9 @@ const VALID_EMAIL_TLD=/\.(?:co|org|me|ltd|plc|net|sch|ac|gov|nhs)\.uk$|\.(?:com|
 // ALL real, individual, non-placeholder email addresses on a record (o.emails may be "a@x; b@x; you@company.com")
 function emailsOf(o){
   const raw=(o.emails!=null?String(o.emails):String(o.email||''));
-  return [...new Set(raw.split(/[;,\s]+/).map(s=>s.trim().toLowerCase())
+  // clean each address: decode URL-encoding (%20…) + strip leading non-alphanumeric junk from the local part
+  const clean=s=>{s=s.trim().toLowerCase();if(/%[0-9a-f]{2}/i.test(s)){try{s=decodeURIComponent(s);}catch(e){}}const at=s.indexOf('@');return at>0?s.slice(0,at).replace(/^[^a-z0-9]+/,'')+s.slice(at):s;};
+  return [...new Set(raw.split(/[;,\s]+/).map(clean)
     .filter(s=>/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(s)&&!PLACEHOLDER_EMAIL.test(s)&&VALID_EMAIL_TLD.test((s.split('@')[1]||''))))];
 }
 // GLOBAL DEDUPE RULE (every sweep, every area, every category): merge two records into one ONLY when
@@ -804,6 +908,11 @@ function districtsForArea(a){a=(a||'').toUpperCase();const hint=DISTRICT_HINTS[a
 // "<category> in <town>", instead of tiling every district). London areas use their compass locality.
 const AREA_TOWNS={AL:'St Albans',B:'Birmingham',BA:'Bath',BB:'Blackburn',BD:'Bradford',BH:'Bournemouth',BL:'Bolton',BN:'Brighton',BR:'Bromley',BS:'Bristol',CA:'Carlisle',CB:'Cambridge',CF:'Cardiff',CH:'Chester',CM:'Chelmsford',CO:'Colchester',CR:'Croydon',CT:'Canterbury',CV:'Coventry',CW:'Crewe',DA:'Dartford',DE:'Derby',DH:'Durham',DL:'Darlington',DN:'Doncaster',DT:'Dorchester',DY:'Dudley',E:'East London',EC:'City of London',EN:'Enfield',EX:'Exeter',FY:'Blackpool',GL:'Gloucester',GU:'Guildford',HA:'Harrow',HD:'Huddersfield',HG:'Harrogate',HP:'Hemel Hempstead',HR:'Hereford',HU:'Hull',HX:'Halifax',IG:'Ilford',IP:'Ipswich',KT:'Kingston upon Thames',L:'Liverpool',LA:'Lancaster',LD:'Llandrindod Wells',LE:'Leicester',LL:'Llandudno',LN:'Lincoln',LS:'Leeds',LU:'Luton',M:'Manchester',ME:'Rochester Kent',MK:'Milton Keynes',N:'North London',NE:'Newcastle upon Tyne',NG:'Nottingham',NN:'Northampton',NP:'Newport',NR:'Norwich',NW:'North West London',OL:'Oldham',OX:'Oxford',PE:'Peterborough',PL:'Plymouth',PO:'Portsmouth',PR:'Preston',RG:'Reading',RH:'Redhill',RM:'Romford',S:'Sheffield',SA:'Swansea',SE:'South East London',SG:'Stevenage',SK:'Stockport',SL:'Slough',SM:'Sutton Surrey',SN:'Swindon',SO:'Southampton',SP:'Salisbury',SR:'Sunderland',SS:'Southend-on-Sea',ST:'Stoke-on-Trent',SW:'South West London',SY:'Shrewsbury',TA:'Taunton',TF:'Telford',TN:'Tunbridge Wells',TQ:'Torquay',TR:'Truro',TS:'Middlesbrough',TW:'Twickenham',UB:'Uxbridge',W:'West London',WA:'Warrington',WC:'Central London',WD:'Watford',WF:'Wakefield',WN:'Wigan',WR:'Worcester',WS:'Walsall',WV:'Wolverhampton',YO:'York'};
 function areaTown(a){return AREA_TOWNS[(a||'').toUpperCase()]||a;}
+// AREA-LEVEL search centres (built 2026-07 from postcodes.io district centroids via a ~15km greedy spatial
+// cover). A few well-spread points per area so area-level covers EVERY town, not just the biggest (e.g. CO =
+// Colchester + Clacton + Sudbury sides), at ~3 searches/area instead of ~24 districts. See build_centres.js.
+const AREA_CENTRES={AL:['AL1'],B:['B5','B80','B72'],BA:['BA11','BA7','BA20','BA5','BA1'],BB:['BB5','BB7'],BD:['BD9','BD20','BD24'],BH:['BH1','BH14'],BL:['BL1'],BN:['BN3','BN20','BN12','BN2'],BR:['BR1'],BS:['BS1','BS24','BS7'],CA:['CA21','CA1','CA10','CA13','CA4','CA5','CA9','CA12','CA16'],CB:['CB1','CB10','CB6','CB8'],CF:['CF38','CF31','CF5','CF44'],CH:['CH64','CH1','CH25'],CM:['CM5','CM1','CM6','CM2'],CO:['CO1','CO13','CO8'],CR:['CR2'],CT:['CT3','CT18','CT7'],CV:['CV3','CV34','CV9','CV21','CV36'],CW:['CW7','CW1','CW4'],DA:['DA1'],DE:['DE23','DE4','DE11','DE1','DE3'],DH:['DH7'],DL:['DL4','DL9','DL6','DL12','DL13'],DN:['DN2','DN40','DN20','DN10','DN7','DN21','DN31'],DT:['DT3','DT6','DT10'],DY:['DY7','DY11'],E:['E1'],EC:[],EN:['EN1'],EX:['EX3','EX37','EX14','EX21','EX31','EX15','EX17','EX22','EX35'],FY:['FY1'],GL:['GL1','GL15','GL9','GL56','GL7','GL19'],GU:['GU12','GU30','GU1','GU15','GU27'],HA:['HA1'],HD:['HD1'],HG:['HG3'],HP:['HP16','HP23','HP17'],HR:['HR1','HR3','HR6','HR7','HR8','HR9'],HU:['HU1','HU4','HU11','HU12'],HX:['HX1'],IG:['IG1'],IP:['IP3','IP30','IP17','IP21','IP27','IP1','IP18','IP25'],KT:['KT7'],L:['L4','L29'],LA:['LA12','LA5','LA23','LA10','LA17'],LD:['LD1','LD4','LD7','LD3'],LE:['LE6','LE9','LE13','LE15','LE16','LE65'],LL:['LL77','LL42','LL32','LL41','LL11','LL16','LL51','LL66','LL15','LL17'],LN:['LN2','LN7','LN9','LN12','LN11'],LS:['LS8','LS14','LS16'],LU:['LU4'],M:['M5'],ME:['ME5','ME9'],MK:['MK10','MK40','MK3'],N:['N1'],NE:['NE3','NE43','NE67','NE22','NE19','NE47','NE65','NE70'],NG:['NG3','NG21','NG31','NG23','NG34'],NN:['NN8','NN1','NN14','NN11','NN12'],NP:['NP4','NP18','NP8','NP15','NP16'],NR:['NR1','NR22','NR31','NR11','NR9','NR15','NR12','NR16','NR32'],NW:['NW1'],OL:['OL11'],OX:['OX44','OX5','OX15','OX29','OX11'],PE:['PE5','PE14','PE26','PE35','PE11','PE22','PE24','PE32','PE19'],PL:['PL6','PL22','PL29','PL16'],PO:['PO1','PO30','PO18','PO39'],PR:['PR1','PR8'],RG:['RG2','RG22','RG14'],RH:['RH6','RH13','RH16'],RM:['RM13'],S:['S5','S21','S63','S17','S40'],SA:['SA5','SA36','SA47','SA68','SA17','SA61','SA42','SA8','SA19','SA7'],SE:['SE1'],SG:['SG2','SG7','SG9','SG15'],SK:['SK7','SK17'],SL:['SL1'],SM:['SM1'],SN:['SN6','SN11','SN8','SN15'],SO:['SO50','SO41','SO21'],SP:['SP2','SP9','SP7','SP5'],SR:['SR2'],SS:['SS6'],ST:['ST1','ST16','ST10'],SW:['SW2'],SY:['SY1','SY7','SY17','SY10','SY13','SY15','SY23','SY19','SY25'],TA:['TA13','TA5','TA1','TA23','TA22'],TF:['TF1','TF9'],TN:['TN1','TN32','TN26','TN13','TN6','TN28','TN31'],TQ:['TQ9','TQ7','TQ12'],TR:['TR4','TR17','TR21','TR10','TR7'],TS:['TS1','TS21','TS11'],TW:['TW2'],UB:['UB1'],W:['W2'],WA:['WA1','WA13','WA4'],WC:[],WD:['WD3'],WF:['WF1','WF6'],WN:['WN1'],WR:['WR1','WR11','WR15'],WS:['WS6'],WV:['WV5','WV15'],YO:['YO32','YO14','YO18','YO21','YO42','YO7','YO8','YO11','YO25','YO51']};
+function areaCentres(a){a=(a||'').toUpperCase();return (AREA_CENTRES[a]&&AREA_CENTRES[a].length)?AREA_CENTRES[a].slice():[areaTown(a)];}
 
 /* ---------- prepare a sweep once: interpret request, parse rules, resolve sources ---------- */
 async function prepareSweep(){
@@ -883,8 +992,8 @@ async function districtResults(term,d,town,townMode){
     ((data&&data.results)||[]).forEach(p=>rows.push({p,src:'google'}));
   }
   if(mode==='ch'){
-    const sic=($('sic').value||'').trim();
-    if(!sic)return {error:'Companies House source needs a SIC code in the Verify panel (e.g. 96030 = funerals).',rows};
+    const sic=(($('sic')&&$('sic').value)||'').trim();
+    if(!sic)return {error:'Companies House source needs a SIC code (e.g. 96030 = funerals). Add a #sic field or pick a different data source.',rows};
     const area=($('area').value||'').trim().toUpperCase().split(',')[0].trim();
     window.__sicCache=window.__sicCache||{}; const ck=sic+'|'+area;
     if(window.__sicCache[ck]===undefined){
@@ -916,7 +1025,12 @@ function estimateBatch(){
   const {jobs,cats,areas}=batchJobs();
   if(!jobs.length){log('Add at least one category line and one area.','er');return;}
   let districts=0; areas.forEach(a=>{const h=DISTRICT_HINTS[a];districts+=h?expandHints(h).length:25;});
-  const pages=+$('batchPages').value||1, searches=districts*cats.length*pages;
+  const pages=+$('batchPages').value||1;
+  const areaLevel=$('areaLevel')&&$('areaLevel').checked;
+  // AREA-LEVEL: a few well-spread search centres per area (covers all its towns), up to `pages` each, plus a
+  // small district-tiling fallback only where an area comes back thin. DISTRICT MODE: every district × pages.
+  const areaCentresTotal = areas.reduce((nn,a)=>nn+areaCentres(a).length,0);
+  const searches = areaLevel ? (areaCentresTotal*cats.length*pages) : (districts*cats.length*pages);
   const paid=($('source').value==='google'||$('source').value==='both');
   // TWO SEPARATE Google Places SKUs, each with its OWN free monthly allowance:
   //   STAGE 1 (this sweep) = Text Search PRO ~$0.032/search, first 5,000/mo free.
@@ -927,7 +1041,7 @@ function estimateBatch(){
   const billable=Math.max(0,searches-S1.free);
   const usdCost=billable*S1.usd, gbpCost=usdCost*gbpRate;
   const cost=paid?('$'+usdCost.toFixed(2)+' ≈ £'+gbpCost.toFixed(2)):'$0 (free source selected)';
-  log(`BATCH ESTIMATE — ${areas.length} area(s) × ${cats.length} categor${cats.length===1?'y':'ies'} = ${jobs.length} jobs; ${districts.toLocaleString()} districts.`,'wn');
+  log(`BATCH ESTIMATE — ${areas.length} area(s) × ${cats.length} categor${cats.length===1?'y':'ies'} = ${jobs.length} jobs; MODE: ${areaLevel?'AREA-LEVEL ('+areaCentresTotal.toLocaleString()+' town-centres across '+areas.length+' area(s) + thin-area fallback)':districts.toLocaleString()+' districts (tiling)'}.`,'wn');
   log(`  STAGE 1 · discovery — ≈ ${searches.toLocaleString()} searches ≈ ${cost}${paid?`  ·  ${S1.tier} (~$${S1.usd.toFixed(3)}/search ≈ ${(S1.usd*gbpRate*100).toFixed(1)}p; first ${S1.free.toLocaleString()}/mo free${searches>S1.free?`, so ${billable.toLocaleString()} billable`:` — within the free allowance`})`:''}.`,paid?'wn':'ok');
   if(paid)log(`  STAGE 2 · contact details — bought ON DEMAND only for leads you tick after vetting: ${S2.tier} ~$${S2.usd.toFixed(3)}/lookup (≈ ${(S2.usd*gbpRate*100).toFixed(1)}p), SEPARATE ${S2.free.toLocaleString()}/mo free allowance. Not spent on rejects.`,'wn');
   if(paid)log('  Switch Data source to "FREE: auto" or "OpenStreetMap" to run STAGE 1 at $0 search cost.','wn');
@@ -1185,12 +1299,14 @@ function applyChainVerdicts(ctx,groupSet){
     // Group-domain is NOT here (merge + review). Weaker token name matches only FLAG (below).
     const brandHit=canonicalBrandHit(l.name);
     const confirmed=confirmedChainHit(l);
+    const fpHit=fpBrandHit(l.name,wd);
     let trigger=null, detail='', evidenced=false;
     if(wd&&isChainDomain(wd,set)){trigger='chain-domain';detail=wd;evidenced=true;}                       // own website IS a blocklisted chain
     else if(chainEmails.length&&!ownEmails.length){trigger='chain-email';detail=chainEmails[0];evidenced=true;}  // only contact is a blocklisted chain domain
     else if(disclosure){trigger='ownership-disclosure';detail=String(l.independent).replace(/^N\s*[—-]\s*/,'').slice(0,60);evidenced=true;}  // own site / high-conf CH PSC
     else if(brandHit){trigger='chain-brand';detail=brandHit;}                                              // exact canonical consolidator brand
     else if(confirmed){trigger='confirmed-chain';detail=confirmed.parent+' (registry: '+(confirmed.evidence||'')+')';}  // proven before
+    else if(fpHit){trigger='funeral-partners';detail='Funeral Partners';}  // known FP white-label branch (scraped brand directory — domain or safe name-key)
     if(trigger){
       if(saif){out.saifOverridden++;log(`⚠ SAIF/independent-sourced firm EXCLUDED on HARD evidence — "${l.name}" (${trigger}: ${detail}). A SAIF member should not be a chain; verify the source data.`,'er');}
       // AUTO-GROW the registry: a fresh HARD-evidence (domain/email/ownership) exclusion is written back so
@@ -1284,11 +1400,40 @@ function propagateFirmData(){
   });
   return {filledSite,filledEmail};
 }
-// For firms a directory listed with NO website, look one up on Google Places by name+postcode so it
-// can be crawled for an email. Guarded by a name check to avoid grabbing a different business's site.
+// Find a firm's real website by name via Firecrawl /search (relevance-ranked). Beats Google-by-name and Bing
+// for deskless/obscure firms (RDS→rdsfp.co.uk, Willow→willowfinancial.co.uk, where Bing gave transport/ireland).
+// Filters out directories/socials, then picks the result whose domain name-matches the firm.
+const FC_BADHOST=/vouchedfor|facebook|fb\.|linkedin|instagram|twitter|x\.com|t\.co|youtube|sjp\.co\.uk|partnership\.sjp|financialadvisers\.co\.uk|plannersearch|equityreleasecouncil|unbiased|yell\.|yelp|192\.com|companieshouse|find-and-update|gov\.uk|trustpilot|glassdoor|threebestrated|wikipedia|\.nm\.com|google\.|bing\.|checkatrade|thomsonlocal|freeindex|cylex|scoot|apple\.|amazon/i;
+const FC_STOP=/^(the|and|of|for|financial|wealth|planning|management|advice|advisers?|advisors?|services?|group|ltd|limited|llp|plc|associates?|partners?|partnership|consultants?|independent|mortgage|protection|care|homecare)$/i;
+async function firecrawlFindDomain(name,area){
+  const town=(typeof areaTown==='function'?areaTown(area):'')||area||'';
+  const toks=String(name).toLowerCase().replace(/&/g,' and ').split(/[^a-z0-9]+/).filter(w=>w.length>=4&&!FC_STOP.test(w));
+  const nk=String(name).toLowerCase().replace(/&/g,'and').replace(/\b(financial|wealth|planning|management|advice|advisers?|advisors?|services?|group|ltd|limited|llp|plc|associates?|partners?|partnership|consultants?|independent|mortgage|protection|the|and|of|for|care|homecare)\b/g,'').replace(/[^a-z0-9]/g,'');
+  try{
+    const r=await fetch('/.netlify/functions/firecrawl',{method:'POST',body:JSON.stringify({query:`${name} ${town}`,limit:5,firecrawlKey:localStorage.getItem('pp_Firecrawl')||undefined})});
+    const d=await r.json(); let first='';
+    for(const res of (d.results||[])){
+      let host; try{host=new URL(res.url).hostname.replace(/^www\./,'').toLowerCase();}catch(e){continue;}
+      if(FC_BADHOST.test(host))continue;
+      const label=host.split('.').slice(0,-1).join('').replace(/[^a-z0-9]/g,'');
+      const strong=toks.slice().sort((a,b)=>b.length-a.length)[0]||'';
+      if((nk&&nk.length>=3&&(label.includes(nk)||nk.includes(label)))||(strong&&strong.length>=5&&label.includes(strong))||toks.filter(t=>host.includes(t)).length>=2){
+        const u='https://'+host; if(/\.uk$/.test(host))return u; if(!first)first=u;   // prefer a UK domain (these are UK firms); else the first match
+      }
+    }
+    return first;
+  }catch(e){}
+  return '';
+}
+// For firms listed with NO website, find one (Firecrawl) by name+area so it can be crawled for an email.
 async function discoverWebsites(){
-  const need=LEADS.filter(l=>!l.website);
+  // Two-stage discipline: a row WITH a placeId is Google-sourced — its website is bought cheaply, keeper-only,
+  // via placedetails.js (the "Get contact details for selected" button), NOT here. So only look up websites
+  // for register/directory rows (no placeId) that arrived without one. This stops the Pro-tier sweep (which
+  // deliberately returns no website) from triggering a paid Google website lookup for every discovered row.
+  const need=LEADS.filter(l=>!l.website&&!l.placeId);
   if(!need.length)return 0;
+  if($('meteredEnrich')&&!$('meteredEnrich').checked){log(`${need.length} firm(s) have no website — the Firecrawl domain lookup is a metered step, so it's skipped. Tick "Metered enrichment" in Rules to let it find their sites.`,'wn');return 0;}
   // Look up a website for EVERY blank row (the free Google-sibling cross-fill already ran; these are the
   // rows with no sibling). The cap SCALES with the work so a single county finishes fast while a full
   // 8-area London region gets full coverage — it's no longer a flat 80. Pacing is preserved (6 workers +
@@ -1305,12 +1450,7 @@ async function discoverWebsites(){
     while(i<cap){
       if(Date.now()>=deadline){hitDeadline=true;break;}
       const l=need[i++];
-      const pc=((l.address||l.postcode||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)||[l.postcode||''])[0];
-      try{
-        const data=await searchDistrict(`${l.name} ${pc||l.area||''}`.trim(),1);
-        const hit=(data.results||[]).find(r=>r.website&&nameKey(r.name).slice(0,8)===nameKey(l.name).slice(0,8));
-        if(hit&&hit.website){l.website=hit.website;found++;}
-      }catch(e){}
+      try{ const w=await firecrawlFindDomain(l.name,l.area); if(w){l.website=w;found++;} }catch(e){}
       await new Promise(r=>setTimeout(r,PACE_MS));  // keep it polite even at scale
     }
   };
@@ -1346,7 +1486,7 @@ function loadRegisterSupply(text){
     const areas=[...new Set(REGISTER_SUPPLY.map(r=>r.POSTCODE_AREA).filter(Boolean))];
     try{localStorage.setItem('pp_RegisterSupply',text.length<4500000?text:'');}catch(e){}
     const st=$('regSupplyStatus'); if(st)st.textContent=`✓ ${REGISTER_SUPPLY.length} register firms · ${cats.length} categor${cats.length===1?'y':'ies'} · ${areas.length} areas`;
-    log(`Register supply loaded — ${REGISTER_SUPPLY.length} register-verified counterparties across ${areas.length} area(s), categories: ${cats.slice(0,8).join(', ')}. Will merge into every sweep of a matching area.`,'ok');
+    log(`Register supply loaded — ${REGISTER_SUPPLY.length} register-verified counterparties across ${areas.length} area(s), categories: ${cats.slice(0,8).join(', ')}. Merges ONLY into sweeps of a matching CATEGORY + area (e.g. it won't add funeral directors to a locksmith search).`,'ok');
     try{refreshRegPubAreas();}catch(e){}
   }catch(e){log('Register supply parse failed — '+e.message,'er');}
 }
@@ -1433,9 +1573,12 @@ function foldInRegister(catKey,catLabel){
   if(!REGISTER_SUPPLY.length)return {registerOnly:0,discoveryOnly:LEADS.length,both:0,loaded:false};
   const areas=new Set(LEADS.map(l=>(l.area||'').toUpperCase()).filter(Boolean));
   const cat=(catKey||'').toLowerCase(), catL=(catLabel||'').toLowerCase().split(/\s+/)[0];
-  const catMatch=c=>{c=(c||'').toLowerCase();return !cat||cat==='default'||!c||c.includes(cat)||cat.includes(c.split('-')[0])||(catL&&c.includes(catL));};
+  // Only fold register rows whose CATEGORY genuinely matches the SEARCHED trade. An unrecognised search
+  // ('default', e.g. locksmith/musician) or a blank register category must NOT pull the whole
+  // (funeral-director) register into an unrelated sweep. Substring both ways covers "funeral" ↔ "Funeral directors".
+  const catMatch=c=>{c=(c||'').toLowerCase();if(!c||!cat||cat==='default')return false;return c.includes(cat)||cat.includes(c.split('-')[0])||(catL&&catL.length>=4&&c.includes(catL));};
   const set=chainDomainSet();
-  const isRegChain=r=>/chain/i.test(r.INDEPENDENT_OR_CHAIN||'')||!!(r.PARENT_GROUP&&r.PARENT_GROUP.trim())||isChainDomain(domainOf(r.WEBSITE),set)||!!confirmedChainHit({name:r.COMPANY,area:r.POSTCODE_AREA})||!!canonicalBrandHit(r.COMPANY);
+  const isRegChain=r=>/chain/i.test(r.INDEPENDENT_OR_CHAIN||'')||!!(r.PARENT_GROUP&&r.PARENT_GROUP.trim())||isChainDomain(domainOf(r.WEBSITE),set)||!!confirmedChainHit({name:r.COMPANY,area:r.POSTCODE_AREA})||!!canonicalBrandHit(r.COMPANY)||!!fpBrandHit(r.COMPANY,domainOf(r.WEBSITE));
   let added=0, matched=0, excludedChain=0;
   REGISTER_SUPPLY.forEach(r=>{
     const area=(r.POSTCODE_AREA||'').toUpperCase();
@@ -1474,32 +1617,48 @@ function foldInRegister(catKey,catLabel){
    ones with a website still get crawled). Merged into discovery by the normal counterparty keys → one row
    per firm, SOURCE = manual / both. Persists in localStorage like the register file. */
 let MANUAL_SUPPLY=[];
+let MANUAL_EVALUATE=false;   // "Evaluate on import": load rows UN-verified so Prospector runs its own classify/chain/vet
 function normManualRow(r){
   const idx={}; for(const k in r) idx[k.toLowerCase().replace(/[^a-z0-9]/g,'')]=r[k];
   const g=(...keys)=>{for(const k of keys){const v=(idx[k]||'').trim();if(v)return v;}return '';};
   const o={
     COMPANY:g('company','businessname','business','name','supplier','firm'),
     CONTACT_NAME:g('contactname','contact','person','owner'),
-    CATEGORY:g('category','cat','trade','service','type'),
-    AREA:g('area','postcodearea','pcarea'),
+    // 'batchcategory' lets a re-imported MASTER sweep export (Export MASTER) load straight back in; falls
+    // back to the AI's read of the trade if no explicit category column is present.
+    CATEGORY:g('category','cat','trade','service','type','batchcategory','aitype'),
+    AREA:g('area','postcodearea','pcarea','batcharea'),
     DISTRICT:g('district','outcode'),
     TOWN:g('town','city','location'),
     WEBSITE:g('website','web','url','site'),
     PHONE:g('phone','tel','telephone','mobile','number','phonenumber'),
-    EMAIL:g('email','emailaddress','mail'),
+    EMAIL:g('email','emails','emailaddress','mail'),
+    ADDRESS:g('address','addr','fulladdress','streetaddress'),
+    COMPANY_NO:g('companyno','companynumber','company_no','crn','companieshouse'),
     NOTES:g('notes','note','comment','comments','info')
   };
+  o._raw = r;   // keep EVERY original column (independent, adviceBasis, frn, confidence, …) so nothing is lost on import
   const pc=g('postcode');
   if(!o.AREA){ const src=o.DISTRICT||pc; o.AREA=(src.match(/^[A-Za-z]{1,2}/)||[''])[0]; }
   if(!o.DISTRICT&&pc){ o.DISTRICT=(pc.match(/^[A-Za-z]{1,2}\d[A-Za-z0-9]*/)||[''])[0]; }
   o.AREA=(o.AREA||'').toUpperCase().replace(/[^A-Z]/g,'');
   return o;
 }
-function loadManualSupply(text,opts){
+async function loadManualSupply(text,opts){
   opts=opts||{};
+  // "Evaluate on import" mode — read the checkbox (persisted so a reload keeps it). ON = rows load UN-verified
+  // and go through Prospector's own classify + chain-flag + Vet & Rank; OFF = pre-verified (skip checks).
+  if(!opts.silent){ MANUAL_EVALUATE = !!($('evalImport')&&$('evalImport').checked); try{localStorage.setItem('pp_ManualEvaluate',MANUAL_EVALUATE?'1':'');}catch(e){} }
+  else { try{MANUAL_EVALUATE = localStorage.getItem('pp_ManualEvaluate')==='1'; if($('evalImport'))$('evalImport').checked=MANUAL_EVALUATE;}catch(e){} }
   try{
     const rows=[], skipped=[], unmapped=[];
-    parseCSV(text).map(normManualRow).forEach(r=>{
+    // Numbers/Excel exports often prepend a single-cell TITLE row (the table/file name), which pushes the
+    // real header down. If line 1 has no delimiter but line 2 does, drop line 1 so the real header is used.
+    {let L=text.replace(/^﻿/,'').split(/\r?\n/); let guard=0;
+     while(L.length>2 && !/[,;\t]/.test(L[0]||'') && /[,;\t]/.test(L[1]||'') && guard++<3){ L=L.slice(1); }
+     if(guard)text=L.join('\n');}
+    const parsed=parseCSV(text);
+    parsed.map(normManualRow).forEach(r=>{
       if(!r.COMPANY||!r.CATEGORY||!r.AREA){skipped.push(r);return;}
       r.catId=guessCanonicalCategory(r.CATEGORY)||'';
       r.catLabel=(AL_CATEGORIES.find(c=>c.id===r.catId)||{}).label||r.CATEGORY;
@@ -1511,23 +1670,126 @@ function loadManualSupply(text,opts){
     const areas=[...new Set(rows.map(r=>r.AREA))].sort();
     const st=$('manualSupplyStatus'); if(st)st.textContent=`✓ ${rows.length} manual supplier(s) · ${areas.length} area(s): ${areas.slice(0,12).join(', ')}${skipped.length?` · ${skipped.length} skipped (missing COMPANY/CATEGORY/AREA)`:''}`;
     if(!opts.silent){
-      log(`Manual supply loaded — ${rows.length} hand-verified supplier(s) across ${areas.length} area(s). They skip the classifier + chain exclusion, still enrich + get written up, and publish as pending.`,'ok');
-      if(skipped.length)log(`  ${skipped.length} manual row(s) skipped — COMPANY, CATEGORY and AREA are required. First: ${skipped.slice(0,3).map(r=>r.COMPANY||'(no name)').join('; ')}`,'wn');
+      log(MANUAL_EVALUATE
+        ? `Import loaded — ${rows.length} row(s) across ${areas.length} area(s) in EVALUATE mode. Prospector will run its own checks (classify · chain-flag · Vet & Rank) on all of them — every row + every column kept for you to review.`
+        : `Manual supply loaded — ${rows.length} hand-verified supplier(s) across ${areas.length} area(s). They skip the classifier + chain exclusion, still enrich + get written up, and publish as pending.`,'ok');
+      if(skipped.length){
+        const cols=parsed.length?Object.keys(parsed[0]):[];
+        if(rows.length===0)log(`  ${skipped.length} manual row(s) skipped, 0 loaded. The loader DETECTED these columns: [${cols.join(', ')||'NONE — the file may not be comma-separated'}]. It needs a name/company column, a category (or batchCategory), and an area. If the columns look right but nothing loaded, you're on a cached page — hard-refresh (⌘⇧R).`,'er');
+        else log(`  ${skipped.length} manual row(s) skipped — COMPANY, CATEGORY and AREA are required. First: ${skipped.slice(0,3).map(r=>r.COMPANY||'(no name)').join('; ')}`,'wn');
+      }
       if(unmapped.length)log(`  ⚠ ${unmapped.length} manual row(s) have a CATEGORY that doesn't map to a marketplace category — those use the publish-panel category picker instead: ${unmapped.slice(0,6).join('; ')}.`,'wn');
     }
     if(!running){ const res=foldInManual(); render(); setStats();
-      if(!opts.silent&&res.loaded)log(`Manual supply in grid — ${res.added} added, ${res.matched} merged with existing rows. Click ✦ Enrich to crawl the ones with a website, then ⚖ Vet & Rank to write them up.`,'ok');
+      if(MANUAL_EVALUATE && !opts.silent && res.loaded && MODE==='functions'){
+        // Run Prospector's own checks on the imported rows (they're UN-verified in evaluate mode). Nothing is
+        // dropped silently — the classifier keeps uncertain rows, chains are FLAGGED (and hard-excludes show in
+        // the excluded list). Then the operator enriches + Vet & Ranks + reviews + publishes.
+        const cat=(rows[0]&&rows[0].CATEGORY)||'supplier';
+        window.__lastCtx=window.__lastCtx||{}; window.__lastCtx.rawReq=window.__lastCtx.rawReq||cat;
+        if($('aiClassify').checked){ try{ await aiClassify(cat); }catch(e){ log('Classifier on import failed — '+e.message+' (continuing).','er'); } }
+        try{ const cv=applyChainVerdicts(window.__lastCtx); if(cv&&cv.excluded)log(`Chain check on import — ${cv.excluded} hard-excluded to the excluded list.`,'wn'); }catch(e){}
+        // Move the name-flagged "suspected chain" rows OUT of the working grid into the excluded list too, so
+        // the grid stays clean (just the likely-independents). They're not lost — the FULL row is kept and
+        // recoverable via "↩ Restore excluded". Keeps Prospector's not-a-silent-delete principle.
+        const flagged=LEADS.filter(l=>l.suspectedChain);
+        if(flagged.length){ flagged.forEach(l=>{ EXCLUDED++; DROPPED.push({name:l.name,reason:'suspected-chain',pattern:l.suspectPattern||'',area:l.area||'',district:l.district||'?',address:l.address||'',phone:l.phone||'',website:l.website||'',emails:l.emails||'',sources:(l.sources||[]).join('+'),rating:l.rating,reviews:l.reviews,_lead:l}); }); LEADS=LEADS.filter(l=>!l.suspectedChain); }
+        render(); setStats();
+        log(`Imported & evaluated — grid now holds the likely-independents; ${(DROPPED.length)||0} not-independent/suspected-chain row(s) moved to the excluded list (click the "excluded" counter to see them; ↩ Restore excluded brings any back). Now: ✦ Enrich → ⚖ Vet & Rank → review, tick, publish. Your original columns are preserved on every row.`,'ok');
+      } else if(!opts.silent&&res.loaded)log(`Manual supply in grid — ${res.added} added, ${res.matched} merged with existing rows. Click ✦ Enrich to crawl the ones with a website, then ⚖ Vet & Rank to write them up.`,'ok');
     }
   }catch(e){log('Manual supply parse failed — '+e.message,'er');}
 }
 function clearManualSupply(){
   MANUAL_SUPPLY=[]; try{localStorage.removeItem('pp_ManualSupply');}catch(e){}
   const before=LEADS.length;
-  LEADS=LEADS.filter(l=>!(l.manual&&l.source==='manual'));                 // drop manual-only rows
+  LEADS=LEADS.filter(l=>!(l.manual&&(l.source==='manual'||l.source==='imported')));   // drop manual-only AND evaluate-imported rows
   LEADS.forEach(l=>{ if(l.manual){ l.manual=false; l.verified=false; if(l.source==='both')l.source='discovery'; } });
   const st=$('manualSupplyStatus'); if(st)st.textContent='No manual file loaded. Required: COMPANY, CATEGORY, AREA. Optional: CONTACT_NAME, DISTRICT, TOWN, WEBSITE, PHONE, EMAIL, NOTES.';
   render();setStats();
   log(`Manual supply cleared — removed ${before-LEADS.length} manual-only row(s).`,'ok');
+}
+/* ---------- LOAD FROM DATABASE: pull firms already stored in the kb (Supabase) into the grid ----------
+   These are firms sourced by the operator, a co-worker, or a background sweep and upserted to /functions/kb.
+   We fetch them, shape them into the CSV columns loadManualSupply() already understands, and reuse that exact
+   import → review → Vet & Rank → publish path. No new grid logic. Respects the "Evaluate on import" checkbox. */
+async function loadFromDatabase(){
+  const trade=(($('dbTrade')&&$('dbTrade').value)||'').trim();
+  const area=(($('dbArea')&&$('dbArea').value)||'').trim().toUpperCase();
+  const st=$('dbLoadStatus');
+  if(st)st.textContent='Loading from database…';
+  try{
+    // A blank Trade means "every trade", which is now ~9,500 rows — more than the 6MB a Netlify function may
+    // return, so it 502s and the old code reported a bare "unknown error". Ask for a trade instead.
+    if(!trade && !area){
+      if(st)st.textContent='Type a Trade (or an Area) first — the whole database is too large to load in one go.';
+      log('Database load — enter a Trade name (e.g. "Florists") or an Area. Loading every trade at once exceeds what the server can return in one response.','er');
+      return;
+    }
+    const body={action:'get',limit:20000}; if(trade)body.trade=trade; if(area)body.area=area;
+    const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const txt=await r.text();                      // read as TEXT first — a 502 returns HTML/JSON-error, not our shape
+    let d=null; try{ d=JSON.parse(txt); }catch(e){ d=null; }
+    if(!d||!d.ok){
+      let msg=(d&&(d.error||d.errorMessage||d.detail||d.status))||('HTTP '+r.status);
+      if(/ResponseSizeTooLarge|payload size/i.test(txt)) msg='too many rows for one response — narrow it with a Trade and/or an Area.';
+      if(st)st.textContent='Load failed — '+msg; log('Database load failed — '+msg,'er'); return;
+    }
+    const rows=d.results||[];
+    if(!rows.length){ if(st)st.textContent='No stored firms match'+(trade?` trade "${trade}"`:'')+(area?` in ${area}`:'')+'.'; log('Database load — 0 rows matched your trade/area.','wn'); return; }
+    const esc=v=>{v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+    const H=['COMPANY','CATEGORY','AREA','DISTRICT','POSTCODE','ADDRESS','WEBSITE','PHONE','EMAIL','COMPANY_NO','NOTES','SOURCE'];
+    const csv=H.join(',')+'\n'+rows.map(o=>[o.name,o.trade||o.category||trade||'Supplier',o.area,o.district,o.postcode,o.address,o.website,o.phone,o.email,o.company_number,o.notes,o.source].map(esc).join(',')).join('\n');
+    const areas=[...new Set(rows.map(o=>o.area))].sort();
+    if(st)st.textContent=`✓ ${rows.length} stored firm(s) · ${areas.length} area(s): ${areas.slice(0,14).join(', ')}${areas.length>14?'…':''}`;
+    await loadManualSupply(csv);
+    log(`Loaded ${rows.length} stored firm(s) from the database${trade?` (trade: ${trade})`:''}${area?`, area ${area}`:''} into the grid. Now: review → ✦ Enrich → ⚖ Vet & Rank → tick → publish.`,'ok');
+  }catch(e){ if(st)st.textContent='Load failed — '+e.message; log('Database load error — '+e.message,'er'); }
+}
+/* ---------- SAVE TO DATABASE: push the current grid into the shared kb ----------
+   The CSV import only fills THIS browser's grid; nothing reaches the team's database until this runs. Lets a
+   co-worker with no tools installed do the whole job in a browser: research → import CSV → save here.
+   De-dupes on name+area first, because the database rejects a whole batch if one arrives twice. */
+async function saveGridToDatabase(){
+  const st=$('dbSaveStatus');
+  const trade=(($('dbTrade')&&$('dbTrade').value)||'').trim();
+  const tag=(($('dbSaveTag')&&$('dbSaveTag').value)||'').trim();
+  if(!LEADS.length){ if(st)st.textContent='Nothing in the grid to save — import a CSV or run a search first.'; log('Save to database — the grid is empty.','er'); return; }
+  if(!trade){ if(st)st.textContent='Fill in the Trade box above first — it becomes the category on every row.'; log('Save to database — set the Trade box first (use the exact marketplace category name).','er'); return; }
+  // Leaving the tag blank is fine — stamp today's date so a bad batch can still be found and removed later.
+  const srcTag = tag || ('manual-' + new Date().toISOString().slice(0,10));
+  const seen=new Set(); const rows=[]; let noArea=0;
+  for(const l of LEADS){
+    const area=String(l.area||'').toUpperCase().replace(/[^A-Z]/g,'');
+    if(!l.name||!area){ noArea++; continue; }
+    const k=nameKey(l.name)+'|'+area; if(seen.has(k))continue; seen.add(k);
+    let em=''; try{ em=(typeof emailsOf==='function')?emailsOf(l).join('; '):(l.emails||''); }catch(e){ em=l.emails||''; }
+    // NEVER clobber a row that came FROM the database. Loading a trade, then pressing Save, used to rewrite
+    // every row's source and notes with this run's tag — destroying curated accreditation flags like
+    // "TACT:member" / "STEP:confirmed". A row loaded from the store keeps its ORIGINAL source and notes;
+    // only genuinely new rows get your tag.
+    const raw = l.importRaw || {};
+    const wasStored = !!(raw.SOURCE || raw.source);
+    const origSource = raw.SOURCE || raw.source || '';
+    const origNotes  = raw.NOTES  || raw.notes  || '';
+    rows.push({ name:l.name, trade, area, district:l.district||null, postcode:l.postcode||null, address:l.address||null,
+      website:l.website||null, phone:l.phone||null, email:em||null, company_number:l.companyNo||null,
+      source: wasStored ? origSource : srcTag,
+      status:'verified',
+      notes: (wasStored && origNotes) ? origNotes : (l.alNotes||l.excludeReason||null) });
+  }
+  if(!rows.length){ if(st)st.textContent='No rows had both a name and an area — nothing saved.'; return; }
+  if(st)st.textContent=`Saving ${rows.length} firm(s)…`;
+  let saved=0, failed=0;
+  for(let i=0;i<rows.length;i+=100){
+    try{
+      const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'upsert',rows:rows.slice(i,i+100)})});
+      const d=await r.json();
+      if(d&&d.ok)saved+=d.upserted||0; else { failed+=Math.min(100,rows.length-i); log('Save batch failed — '+JSON.stringify(d).slice(0,200),'er'); }
+    }catch(e){ failed+=Math.min(100,rows.length-i); log('Save batch error — '+e.message,'er'); }
+  }
+  if(st)st.textContent=`✓ Saved ${saved} firm(s) to the database as "${trade}" tagged "${srcTag}".`+(failed?` ${failed} failed.`:'')+(noArea?` ${noArea} row(s) skipped (no area).`:'');
+  log(`Saved ${saved} firm(s) to the shared database — trade "${trade}", tag "${srcTag}".`+(failed?` ${failed} FAILED.`:'')+(noArea?` ${noArea} skipped for having no postcode area.`:'')+` The team can now pull them with ⬇ Load stored firms.`,failed?'wn':'ok');
 }
 function foldInManual(){
   LEADS.forEach(l=>{if(!l.source)l.source='discovery';});
@@ -1542,7 +1804,10 @@ function foldInManual(){
     ));
     if(m){
       m.source = m.source==='manual'?'manual':'both';
-      m.manual=true; m.verified=true;                       // hand-verified → immune to classifier + chain exclusion
+      m.manual=true; if(!MANUAL_EVALUATE)m.verified=true;    // pre-verified → immune to checks; evaluate mode → leave open to checks
+      if(r._raw)m.importRaw=r._raw;
+      if(r.ADDRESS&&!m.address)m.address=r.ADDRESS;
+      if(r.COMPANY_NO&&!m.companyNo&&!m.companyNoUnverified)m[MANUAL_EVALUATE?'companyNoUnverified':'companyNo']=r.COMPANY_NO;
       if(!m.contact&&r.CONTACT_NAME)m.contact=r.CONTACT_NAME;
       if(!emailsOf(m).length&&r.EMAIL)m.emails=r.EMAIL;
       if(!m.phone&&r.PHONE)m.phone=r.PHONE;
@@ -1552,12 +1817,14 @@ function foldInManual(){
       if(!m.pubCatId&&r.catId){m.pubCatId=r.catId;m.pubCatLabel=r.catLabel;}
       matched++;
     } else {
-      LEADS.push({area, district:r.DISTRICT||'?', name:r.COMPANY, address:'', postcode:r.DISTRICT||'',
+      LEADS.push({area, district:r.DISTRICT||'?', name:r.COMPANY, address:r.ADDRESS||'', postcode:r.DISTRICT||'',
         phone:r.PHONE||'', emails:r.EMAIL||'', contact:r.CONTACT_NAME||'', website:r.WEBSITE||'', town:r.TOWN||'',
-        source:'manual', manual:true, verified:true, manualNotes:r.NOTES||'',
+        source:MANUAL_EVALUATE?'imported':'manual', manual:true, verified:!MANUAL_EVALUATE, manualNotes:r.NOTES||'',
+        importRaw:r._raw||null,
+        companyNo:MANUAL_EVALUATE?'':(r.COMPANY_NO||''), companyNoUnverified:MANUAL_EVALUATE?(r.COMPANY_NO||''):'',
         pubCatId:r.catId||'', pubCatLabel:r.catLabel||'',
-        memberships:'', register:'manual', independent:'Y',
-        sources:['manual'], foundAreas:[area], rating:null, reviews:null, types:[],
+        memberships:'', register:MANUAL_EVALUATE?'imported':'manual', independent:MANUAL_EVALUATE?'':'Y',
+        sources:[MANUAL_EVALUATE?'imported':'manual'], foundAreas:[area], rating:null, reviews:null, types:[],
         branchCount:1, branchPCs:[], branches:[], enriched:false});
       added++;
     }
@@ -1654,17 +1921,17 @@ async function runSearch(){
   const pool=makePool();
   if(areaLevel){
     // ITEM 4 — one Text Search on the area's main town, keep everything; district-tile ONLY if <5 survive vetting.
-    const twn=areaTown(area);
-    $('sDistricts').textContent=1;$('sRaw').textContent=0;
-    log(`Sweep started — AREA-LEVEL: "${ctx.term} in ${twn}" (${area}), one call, all results kept.`,'ok');
-    await gatherArea(area,[],[twn],twn,true,ctx,pool);
+    const centres=areaCentres(area);
+    $('sDistricts').textContent=centres.length;$('sRaw').textContent=0;
+    log(`Sweep started — AREA-LEVEL: "${ctx.term}" across ${centres.length} centre(s) in ${area} (${centres.join(', ')}), all results kept.`,'ok');
+    await gatherArea(area,[],centres,'',true,ctx,pool);
     await finalizePool(pool,ctx,{selectedAreas:[area],runFollowups:false});   // rules/vet pass to count survivors
     const kept=LEADS.filter(l=>(l.area||'').toUpperCase()===area).length;
     if(kept<5){
       const fb=districts.length?districts:districtsForArea(area);
-      log(`Area-level "${twn}" → ${kept} after vetting (<5) — falling back to district tiling for ${area} (${fb.length} districts).`,'wn');
+      log(`Area-level ${area} → ${kept} after vetting (<5 across ${centres.length} centre(s)) — filling in with district tiling (${fb.length} districts).`,'wn');
       await gatherArea(area,fb,fb,'',false,ctx,pool);
-    } else log(`Area-level "${twn}" → ${kept} after vetting — deep enough, no district fallback.`,'ok');
+    } else log(`Area-level ${area} → ${kept} after vetting across ${centres.length} centre(s) — deep enough.`,'ok');
     await finalizePool(pool,ctx,{selectedAreas:[area],runFollowups:true});
   } else {
     const tiles=townMode?[town,town+' town centre','near '+town]:districts;
@@ -1708,9 +1975,9 @@ async function regionLoop(){
     const districts=districtsForArea(area);
     const areaLevel=$('areaLevel')&&$('areaLevel').checked;
     if(areaLevel){
-      const twn=areaTown(area); $('sDistricts').textContent=1;
-      log(`— Area ${REGION.done.length+1}/${REGION.total}: ${area} — area-level "${ctx.term} in ${twn}"…`,'wn');
-      try{await gatherArea(area,[],[twn],twn,true,ctx,pool);}catch(e){log(`Area ${area} failed — ${e.message} (continuing).`,'er');}
+      const centres=areaCentres(area); $('sDistricts').textContent=centres.length;
+      log(`— Area ${REGION.done.length+1}/${REGION.total}: ${area} — area-level across ${centres.length} centre(s) (${centres.join(', ')})…`,'wn');
+      try{await gatherArea(area,[],centres,'',true,ctx,pool);}catch(e){log(`Area ${area} failed — ${e.message} (continuing).`,'er');}
     } else {
       $('sDistricts').textContent=districts.length;
       log(`— Area ${REGION.done.length+1}/${REGION.total}: ${area} (${districts.length} districts)…`,'wn');
@@ -1827,10 +2094,55 @@ async function getContactDetails(){
   if(running)return;
   const ticked=LEADS.filter(l=>l.alSelect);
   if(!ticked.length){log('Tick the vetted leads you want contact details for (✓ column) first — Place Details is bought only for the ones you tick.','er');return;}
-  const withId=ticked.filter(l=>l.placeId);
-  const noId=ticked.filter(l=>!l.placeId);
-  const need=withId.filter(l=>!l.website||!l.phone);
+  // Only Google-resolve rows that have NEITHER a place id NOR a website. A row that already has a website
+  // (e.g. from the free Unbiased/OSM domain extraction) doesn't need Google — it goes straight to the email
+  // crawl below. This stops us paying Google to "find" a site the row already has.
+  let noId=ticked.filter(l=>!l.placeId && !l.website);
   running=true;$('run').disabled=true;$('detailsBtn').disabled=true;setStats();
+  // STAGE 2·0 — RESOLVE imported/directory rows (no Google place id) to a Google listing by name + place,
+  // so Place Details has something to look up. Without this, a name-only import (Unbiased/CQC/CSV) can never
+  // get a website or phone — both the enrich crawl (needs a URL) and Place Details (needs a place id) are
+  // stage-2 tools that assume a Google search already ran. One Pro-tier text search each (~3p); attaches the
+  // placeId. Conservative match (6-char normalized name prefix) so we don't mis-link to the wrong firm.
+  if(noId.length){
+    log(`STAGE 2·0 · Resolving ${noId.length} imported row(s) to a Google listing by name (needed before a website/phone can be fetched). One text search each (~3p)…`,'wn');
+    let resolved=0, tried=0, wrongTown=0, apiErr='';
+    for(const l of noId){
+      const pc=((l.address||l.postcode||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)||[''])[0];
+      const where=[pc,l.town,l.area].filter(Boolean).join(' ');   // name + town + area for a tighter geo query
+      let data;
+      try{ data=await searchDistrict(`${l.name} ${where}`.trim(),1); }catch(e){ data={error:e.message}; }
+      if(data&&data.error){ apiErr=data.error; break; }   // quota/key error → stop, don't mislabel as "no match"
+      tried++;
+      const target=nameKey(l.name); let best=null,bestScore=0;
+      (data.results||[]).forEach(r=>{const k=nameKey(r.name);let s=0;while(s<Math.min(k.length,target.length)&&k[s]===target[s])s++;if(s>bestScore){bestScore=s;best=r;}});
+      // GEO-VERIFY: a name match alone can grab a same-named firm in the wrong town (Chadwick FM in Dartmouth
+      // or Canton USA for a Colchester lead). Only accept if the result's address is actually in the lead's
+      // area (postcode-area prefix) or town. No geo evidence on the row → require the postcode-area hit.
+      let geoOk=false;
+      if(best){
+        const addr=(best.address||'').toUpperCase();
+        const areaLetters=(l.area||'').toUpperCase().replace(/[^A-Z]/g,'');
+        const areaHit=areaLetters&&new RegExp('\\b'+areaLetters+'\\d').test(addr);
+        const townHit=l.town&&String(l.town).length>=3&&addr.includes(String(l.town).toUpperCase());
+        geoOk=!!(areaHit||townHit);
+      }
+      if(best&&bestScore>=6&&geoOk){l.placeId=best.placeId; if(best.website&&!l.website)l.website=best.website; if(best.phone&&!l.phone)l.phone=best.phone; resolved++;}
+      else if(best&&bestScore>=6&&!geoOk)wrongTown++;
+      await new Promise(r=>setTimeout(r,160));
+    }
+    render();setStats();
+    if(apiErr){
+      const quota=/quota|Quota/.test(apiErr);
+      log(`STAGE 2·0 STOPPED — Google search error: ${apiErr}`,'er');
+      log(quota?`↳ This is Google's DAILY Places search cap (separate from the monthly free tier) — used up for today. It resets at ~08:00 UK (midnight US-Pacific). Re-tick your keepers and press ☎ Get contact details again after the reset. To avoid the wait, raise the "SearchTextRequest per day" quota in Google Cloud → APIs → Places API (New) → Quotas. Your firms ARE on Google — nothing here means they weren't found.`:`↳ Check your Google Places key in Settings (Places API (New) must be enabled on it).`,'wn');
+      running=false;$('run').disabled=false;$('detailsBtn').disabled=false;setStats();return;
+    }
+    log(`STAGE 2·0 done — matched ${resolved} of ${tried} to a Google place id${resolved<tried?`; ${tried-resolved} unmatched${wrongTown?` (${wrongTown} were a name match in the WRONG town — skipped so you don't get another town's firm)`:''}`:''}. Now fetching their website + phone…`,resolved?'ok':'wn');
+  }
+  const withId=ticked.filter(l=>l.placeId);
+  noId=ticked.filter(l=>!l.placeId);
+  const need=withId.filter(l=>!l.website||!l.phone);
   // STAGE 2a — Place Details (paid, own free allowance) for ticked leads missing website/phone
   if(need.length){
     log(`STAGE 2 · Place Details — about to fetch website + phone for ${need.length} ticked lead(s) (${withId.length-need.length} already have both${noId.length?`; ${noId.length} ticked have no Google place id — directory/manual rows, skipped`:''}). SEPARATE SKU with its OWN ~5,000 free calls/month (Google doesn't expose the live remaining count via API).`,'wn');
@@ -2016,11 +2328,20 @@ async function enrichAll(){
      }
    }}
   $('bar').style.width='100%';render();setStats();
-  const ars=LEADS.filter(l=>!l.planAR&&l.regStatus&&/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU|SUBSIDIARY/i.test(l.regStatus));
+  // Tied / restricted / network / appointed-rep firms are NOT independent → EXCLUDE them automatically (an
+  // appointed representative of SJP or a network is not an independent). Moved to the excluded list, fully
+  // recoverable via ↩ Restore excluded. The Regulatory column is now just a fallback for anything that slips
+  // past this. (Funeral-PLAN ARs are neutral/required — l.planAR — and are NOT excluded.)
+  const arRe=l=>!l.planAR&&l.regStatus&&/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU|SUBSIDIARY/i.test(l.regStatus);
+  const ars=LEADS.filter(arRe);
   if(ars.length){
-    log(`⚠ NOT INDEPENDENT — ${ars.length} firm(s) disclose tied/restricted status in their own site small print:`,'er');
-    ars.forEach(a=>log(`  ${a.name} — ${a.regStatus}`,'er'));
-    log('These are flagged, NOT deleted. Sort by the "Regulatory" column and cut them yourself.','wn');
+    log(`⚠ NOT INDEPENDENT — ${ars.length} firm(s) disclose tied/restricted status in their own site small print — EXCLUDED:`,'er');
+    ars.forEach(l=>{ log(`  ${l.name} — ${l.regStatus}`,'er');
+      DROPPED.push({name:l.name,reason:'not-independent',pattern:l.regStatus||'',area:l.area||'',district:l.district||'?',address:l.address||'',phone:l.phone||'',website:l.website||'',emails:l.emails||'',sources:(l.sources||[]).join('+'),rating:l.rating,reviews:l.reviews,_lead:l}); });
+    LEADS=LEADS.filter(l=>!arRe(l));
+    EXCLUDED=DROPPED.length;
+    log(`↩ Moved ${ars.length} tied/restricted firm(s) to the excluded list — recover any via ↩ Restore excluded. The Regulatory column is now just a fallback for anything that slips past.`,'wn');
+    render();setStats();
   }
   const frns=LEADS.filter(l=>l.frn).length;
   log(`Enrichment complete — ${LEADS.filter(l=>l.emails).length} with email, ${LEADS.filter(l=>l.contact).length} with a named contact${frns?`, ${frns} with an FCA number scraped from their site`:''}.`,'ok');
@@ -2034,9 +2355,11 @@ function render(){
   if(!LEADS.length){$('results').innerHTML='<div class="empty"><b>No kept leads yet</b>Adjust rules or run a sweep.</div>';return;}
   const rows=[...LEADS].sort((a,b)=>{
     if(sortKey==='alPriority')return (rankVal(a)-rankVal(b))*sortDir;
+    if(sortKey==='area'){const c=String(a.area||'').localeCompare(String(b.area||''))*sortDir;return c!==0?c:(rankVal(a)-rankVal(b));}  // group by area, best-first within
     const x=a[sortKey]??'',y=b[sortKey]??'';return (x>y?1:x<y?-1:0)*sortDir;});
-  const cols=['alPriority|#','name|Business','source|Supply','saifMember|SAIF','sources|Sources','alVerdict|AfterLife','alFit|Fit','alQuality|Qual','area|Area','district|District','address|Address','rating|★','reviews|Reviews','phone|Phone','website|Web','emails|Email','contact|Contact','register|Register','aiType|AI verdict','regStatus|Regulatory','regstatus|Register status','independent|Indep.','companyNo|Co. No.'];
-  let h='<table><thead><tr><th title="Tick to publish this lead">✓</th>'+cols.map(c=>{const[k,t]=c.split('|');return `<th onclick="sortBy('${k}')">${t}${sortKey===k?(sortDir>0?' ▲':' ▼'):''}</th>`;}).join('')+'</tr></thead><tbody>';
+  const cols=['alPriority|#','name|Business','website|Web','phone|Phone','emails|Email','area|Area','aiType|AI verdict','alVerdict|AfterLife','regStatus|Regulatory','source|Supply','saifMember|SAIF','sources|Sources','alFit|Fit','alQuality|Qual','district|District','address|Address','rating|★','reviews|Reviews','contact|Contact','register|Register','regstatus|Register status','independent|Indep.','companyNo|Co. No.'];
+  const allSel=LEADS.length&&LEADS.every(l=>l.alSelect);
+  let h='<table><thead><tr><th title="Tick / untick ALL rows"><input type="checkbox" '+(allSel?'checked':'')+' onchange="toggleSelectAll(this.checked)" title="Tick / untick all rows"> ✓</th>'+cols.map(c=>{const[k,t]=c.split('|');return `<th onclick="sortBy('${k}')">${t}${sortKey===k?(sortDir>0?' ▲':' ▼'):''}</th>`;}).join('')+'</tr></thead><tbody>';
   const alClass=v=>v==='APPROVE'?'t-ind':v==='EXCLUDE'?'t-chain':'t-q';
   const q=s=>(s||'').replace(/"/g,'&quot;');
   const srcTag=s=>`<span class="tagx ${s==='google'?'t-en':'t-ind'}" style="margin:0 2px 2px 0">${s}</span>`;
@@ -2046,20 +2369,22 @@ function render(){
     <td style="text-align:center"><input type="checkbox" ${l.alSelect?'checked':''} title="${l.alVerdict==='EXCLUDE'?'Excluded by vetting — tick only if you deliberately want to publish it':'Publish this lead'}" onchange="toggleSelect('${l._uid}',this.checked)"></td>
     <td class="b">${l.alPriority??''}</td>
     <td class="b">${l.name}${l.enriched?' <span class="tagx t-en">E</span>':''}${l.suspectedChain?` <span class="tagx t-chain" title="SUSPECTED CHAIN — name matched pattern '${q(l.suspectPattern)}' but NO hard evidence (chain domain / PSC / ownership disclosure). Kept for you to judge, not excluded.">⚑ suspected chain</span>`:''}${l.branchDup?` <span class="tagx t-q" title="One company, ${l.branchCount} branches in ${l.area} — merged to a single slot/contact. Branches: ${((l.branches&&l.branches.length?l.branches.map(b=>b.address||b.postcode):l.branchPCs)||[]).filter(Boolean).join(' | ').replace(/&/g,'&amp;').replace(/"/g,'&quot;')}">⑃ ${l.branchCount} branches</span>`:''}${(l.tradingBrands&&l.tradingBrands.length)?` <span class="tagx t-ind" title="Owner: ${q(l.name)}. Also trades as: ${q(l.tradingBrands.join(' · '))}">also: ${l.tradingBrands.length} trading name(s)</span>`:''}</td>
+    <td>${l.website?`<a href="${l.website}" target="_blank">site</a>`:''}</td>
+    <td>${l.phone||''}</td>
+    <td>${l.emails||(l.enriched?`<span class="muted" style="font-size:13px">${l.enrichNote||'none found'}</span>`:'')}</td>
+    <td class="b" title="${(l.foundAreas&&l.foundAreas.length>1)?'Found while sweeping: '+l.foundAreas.join(', '):''}">${l.area||''}${(l.foundAreas&&l.foundAreas.length>1)?' <span class="muted" style="font-size:11px">+'+(l.foundAreas.length-1)+'</span>':''}</td>
+    <td>${l.aiType?`<span class="tagx ${l.aiType==='NOT INDEPENDENT'?'t-chain':'t-ind'}" title="${(l.aiReason||'').replace(/"/g,'')}">${l.aiType}</span>`:''}</td>
+    <td>${l.alVerdict?`<span class="tagx ${alClass(l.alVerdict)}" title="${q(l.alNotes)}">${l.alVerdict}</span>`:''}${l.alDescription?` <span class="tagx t-en" title="${q(l.alDescription)}">✎ copy</span>`:''}</td>
+    <td>${l.regStatus?`<span class="tagx ${l.planAR?'t-q':'t-chain'}" title="${l.planAR?'Appointed representative of a funeral-plan provider — required since 2022, neutral for independence':''}">${l.regStatus}</span>`:''}</td>
     <td>${(function(s){s=s||'discovery';var c=s==='both'?'t-ind':s==='register'?'t-q':'t-en';return `<span class="tagx ${c}" title="${s==='both'?'In BOTH the register and discovery':s==='register'?'Register-verified (Email Lead Generator) — not found by discovery':'Discovery only — not on the register'}">${s}</span>`;})(l.source)}</td>
     <td style="text-align:center">${(/^(y|yes|true|1)$/i.test(String(l.saifMember||'')))?'<span class="tagx t-ind" title="SAIF member (register)">SAIF</span>':''}</td>
     <td style="max-width:150px">${(l.sources||[]).map(srcTag).join('')}</td>
-    <td>${l.alVerdict?`<span class="tagx ${alClass(l.alVerdict)}" title="${q(l.alNotes)}">${l.alVerdict}</span>`:''}${l.alDescription?` <span class="tagx t-en" title="${q(l.alDescription)}">✎ copy</span>`:''}</td>
     <td>${l.alFit??''}</td><td>${l.alQuality??''}</td>
-    <td class="b" title="${(l.foundAreas&&l.foundAreas.length>1)?'Found while sweeping: '+l.foundAreas.join(', '):''}">${l.area||''}${(l.foundAreas&&l.foundAreas.length>1)?' <span class="muted" style="font-size:11px">+'+(l.foundAreas.length-1)+'</span>':''}</td>
     <td class="muted">${l.district}</td>
     <td style="max-width:220px">${l.address||''}</td>
-    <td>${l.rating??''}</td><td>${l.reviews||''}</td><td>${l.phone||''}</td>
-    <td>${l.website?`<a href="${l.website}" target="_blank">site</a>`:''}</td>
-    <td>${l.emails||(l.enriched?`<span class="muted" style="font-size:13px">${l.enrichNote||'none found'}</span>`:'')}</td><td>${l.contact||''}</td>
+    <td>${l.rating??''}</td><td>${l.reviews||''}</td>
+    <td>${l.contact||''}</td>
     <td>${l.register?`<span class="tagx t-ind">${l.register}</span>`:''}</td>
-    <td>${l.aiType?`<span class="tagx ${l.aiType==='NOT INDEPENDENT'?'t-chain':'t-ind'}" title="${(l.aiReason||'').replace(/"/g,'')}">${l.aiType}</span>`:''}</td>
-    <td>${l.regStatus?`<span class="tagx ${l.planAR?'t-q':'t-chain'}" title="${l.planAR?'Appointed representative of a funeral-plan provider — required since 2022, neutral for independence':''}">${l.regStatus}</span>`:''}</td>
     <td>${(()=>{const v=l.fca||l.reg;if(!v)return '';
       const good=/^IFA|outstanding|good|hygiene [45]|WASTE CARRIER ✓|REGISTERED CHARITY/i.test(v);
       const unknown=/unreadable|verify manually|VERIFY ON SRA|not checked/i.test(v);
@@ -2070,6 +2395,71 @@ function render(){
     <td class="muted">${l.companyNo||''}</td></tr>`;
   }
   $('results').innerHTML=h+'</tbody></table>';
+}
+/* ---------- find websites for the grid via Claude web search (cheap) ---------- */
+// Companies House gives names + postcodes but no website. This fills Web · Phone · Email for every website-less
+// row so you can SEE them before you pick — Claude web search, batched ~6/area, ~2p per firm.
+async function findWebsitesClaude(){
+  if(running){log('Busy — wait for the current step to finish.','wn');return;}
+  const need=LEADS.filter(l=>!l.website);
+  if(!need.length){log('Every row already has a website — nothing to look up.','ok');return;}
+  running=true;const btn=$('findWebBtn');if(btn)btn.disabled=true;
+  const byArea={};need.forEach(l=>{const a=(l.area||'?').toUpperCase();(byArea[a]=byArea[a]||[]).push(l);});
+  const key10=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);
+  let checked=0,found=0,cost=0;
+  try{
+    for(const area in byArea){
+      const rows=byArea[area];
+      for(let i=0;i<rows.length;i+=6){
+        const chunk=rows.slice(i,i+6);
+        let j={};
+        try{ j=await (await fetch('/.netlify/functions/resolvecontacts',{method:'POST',body:JSON.stringify({area,firms:chunk.map(l=>({name:l.name,postcode:l.postcode||l.district||''})),anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})})).json(); }
+        catch(e){ j={error:e.message}; }
+        if(j.error)log(`Website lookup error (${area}): ${j.error}`,'er');
+        cost+=j.costUsd||0;
+        (j.results||[]).forEach(res=>{
+          const m=chunk.find(l=>nameKey(l.name)===nameKey(res.name))||chunk.find(l=>key10(l.name)===key10(res.name));
+          if(m){ if(res.website&&!m.website){m.website=res.website;found++;} if(res.phone&&!m.phone)m.phone=res.phone; if(res.email&&!m.emails)m.emails=res.email; }
+        });
+        checked+=chunk.length; render();
+        log(`Finding websites (Claude) — ${checked}/${need.length} checked, ${found} found (~$${cost.toFixed(2)}).`,'wn');
+      }
+    }
+  }catch(e){log('Website lookup stopped — '+e.message,'er');}
+  running=false;if(btn)btn.disabled=false;render();
+  log(`Website lookup done — found ${found} of ${need.length} (cost ~$${cost.toFixed(2)}). Any left blank have no findable site. Now review, tick your picks, and publish.`,'ok');
+}
+/* ---------- FREE website finder — runs in YOUR browser (residential IP, not datacentre-blocked), £0, any ----
+   scale. Guesses each firm's domain from its name and checks it's LIVE (a no-cors probe — can't read the page
+   from the browser, so it's a name-derived guess, marked "?" for you to glance at). No copy-paste, no API. --- */
+async function findWebsitesFree(){
+  if(running){log('Busy — wait for the current step.','wn');return;}
+  const need=LEADS.filter(l=>!l.website);
+  if(!need.length){log('Every row already has a website.','ok');return;}
+  running=true;const btn=$('findFreeBtn');if(btn)btn.disabled=true;
+  const STOP=new Set(['limited','ltd','llp','plc','the','and','of','for','group','co','uk','services','service','company']);
+  const wordsOf=s=>String(s||'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').split(/\s+/).filter(Boolean);
+  const stems=name=>{const w=wordsOf(name);const b=w.filter(x=>!STOP.has(x));const set=[];const add=s=>{s=String(s||'').replace(/[^a-z0-9]/g,'');if(s.length>=4&&s.length<=28&&!set.includes(s))set.push(s);};
+    add(b.join(''));add(b.slice(0,2).join(''));add(b.slice(0,3).join(''));add(w.join(''));add((b[0]||'')+(b[b.length-1]||''));if(b[0]&&b[0].length>=5)add(b[0]);
+    return set;};   // name-word stems only (no bare initials → avoids collisions like cfa.com)
+  const live=host=>new Promise(res=>{const c=new AbortController();const t=setTimeout(()=>{try{c.abort();}catch(e){}res(false);},4000);
+    fetch('https://'+host,{mode:'no-cors',signal:c.signal}).then(()=>{clearTimeout(t);res(true);}).catch(()=>{clearTimeout(t);res(false);});});
+  const firstLive=hosts=>new Promise(resolve=>{ if(!hosts.length)return resolve(''); let pending=hosts.length,done=false;
+    hosts.forEach(h=>live(h).then(ok=>{ if(done)return; if(ok){done=true;resolve(h);} else if(--pending===0){resolve('');} })); });
+  let found=0,checked=0;
+  try{
+    for(const l of need){
+      if(!running)break;
+      const s=stems(l.name);
+      let hit=await firstLive(s.slice(0,3).map(x=>x+'.co.uk'));   // prefer name-based .co.uk
+      if(!hit)hit=await firstLive(s.slice(0,3).map(x=>x+'.com'));
+      if(!hit)hit=await firstLive(s.slice(3).map(x=>x+'.co.uk'));
+      if(hit){l.website='https://'+hit;l.websiteGuessed=true;found++;}
+      checked++; if(checked%4===0){render();log(`Free finder (your browser) — ${checked}/${need.length} checked, ${found} guessed, £0.`,'wn');}
+    }
+  }catch(e){log('Free finder stopped — '+e.message,'er');}
+  running=false;if(btn)btn.disabled=false;render();
+  log(`Free finder done — guessed ${found} of ${need.length} websites at £0 from your own connection (marked "?" — glance down and untick any obviously wrong). For the rest: 🔎 Claude (2p each) tops up what this missed.`,'ok');
 }
 /* ---------- why was X excluded? ---------- */
 function showDropped(){
@@ -2093,7 +2483,26 @@ function showDropped(){
   });
   const susp=LEADS.filter(l=>l.suspectedChain);
   if(susp.length)log(`SUSPECTED CHAIN (name only, KEPT for you to judge — not excluded) (${susp.length}):\n    `+susp.slice(0,40).map(l=>l.name+(l.area?' ['+l.area+']':'')+` — pattern: ${l.suspectPattern}`).join('\n    '),'wn');
-  log('Chain exclusions now require HARD evidence (chain domain / PSC / ownership disclosure). A name match only flags SUSPECTED CHAIN and stays in the grid. Merged duplicates are NOT here — they are counted separately in the sweep log.','wn');
+  const restorable=DROPPED.filter(d=>d._lead).length;
+  if(restorable)log(`↩ ${restorable} of these were moved out of the grid on import (name-flagged as a suspected chain). Click "↩ Restore excluded" to bring them back into the grid, or run restoreExcluded('suspected-chain') for just those.`,'wn');
+  log('Chain exclusions now require HARD evidence (chain domain / PSC / ownership disclosure). A name match only flags SUSPECTED CHAIN. On import those are moved to this excluded list to keep the grid clean; everything here is recoverable via ↩ Restore excluded. Merged duplicates are NOT here — they are counted separately in the sweep log.','wn');
+}
+// Bring excluded rows back into the working grid. reason optional — restore only that exclusion reason
+// (e.g. 'suspected-chain'); omit to restore everything. Rows moved from the grid on import carry their
+// FULL original lead (_lead) so they return intact; sweep-level drops are rebuilt as a basic lead.
+function restoreExcluded(reason){
+  if(!DROPPED.length){log('Nothing in the excluded list to restore.','wn');return;}
+  const take=reason?DROPPED.filter(d=>d.reason===reason):DROPPED.slice();
+  if(!take.length){log(`No excluded rows with reason "${reason}". Reasons present: ${[...new Set(DROPPED.map(d=>d.reason))].join(', ')||'none'}.`,'wn');return;}
+  const takeSet=new Set(take);
+  take.forEach(d=>{
+    const l=d._lead||{name:d.name,area:d.area||'',district:d.district||'?',address:d.address||'',phone:d.phone||'',website:d.website||'',emails:d.emails||'',source:'restored',sources:(d.sources||'').split('+').filter(Boolean),foundAreas:[d.area||''],branches:(d.branches||[]).slice(),rating:d.rating,reviews:d.reviews,types:[]};
+    l.suspectedChain=false; l.restoredFromExcluded=true; l.excludeReason=d.reason; l.verified=false;
+    LEADS.push(l);
+  });
+  DROPPED=DROPPED.filter(d=>!takeSet.has(d)); EXCLUDED=DROPPED.length;
+  render(); setStats();
+  log(`↩ Restored ${take.length} row(s)${reason?` (${reason})`:''} back into the grid — each tagged with why it was excluded (excludeReason). Re-run ✦ Enrich / ⚖ Vet & Rank on them, then tick and publish the ones you want. ${DROPPED.length} row(s) remain excluded.`,'ok');
 }
 // Per-company provenance: every row that fed a company, its source, and (if excluded) the exact trigger.
 function whyCompany(name){
@@ -2273,7 +2682,25 @@ function guessCanonicalCategory(term){
   for(const c of AL_CATEGORIES){const hay=(c.id+' '+c.label).toLowerCase();let s=0;toks.forEach(w=>{if(hay.includes(w))s++;});if(s>score){score=s;best=c.id;}}
   return score?best:'';
 }
+/* The sweep's Supplier type is a DROPDOWN of the marketplace's own 45 categories, not free text. Typing it
+   by hand produced "Memorial Masons" vs "Memorial masons & stonemasons" — near-identical names that split one
+   trade into two lists the category filter could never reunite. Picking from the list makes that impossible,
+   and the value stored is byte-for-byte the label the marketplace expects. */
+function fillTradeSelect(id,placeholder,memoryKey){
+  const sel=$(id); if(!sel||sel.options.length)return;
+  sel.innerHTML=`<option value="">${placeholder}</option>`+
+    AL_CATEGORIES.slice().sort((a,b)=>a.label.localeCompare(b.label))
+      .map(c=>`<option value="${c.label.replace(/"/g,'&quot;')}">${c.label}</option>`).join('');
+  const last=(()=>{try{return localStorage.getItem(memoryKey)||'';}catch(e){return '';}})();
+  if(last&&[...sel.options].some(o=>o.value===last))sel.value=last;
+  sel.addEventListener('change',()=>{try{localStorage.setItem(memoryKey,sel.value);}catch(e){}});
+}
+function initSweepTradePicker(){
+  fillTradeSelect('sweepTrade','— choose a supplier type —','pp_SweepTrade');
+  fillTradeSelect('dbTrade','— choose a trade to load —','pp_DbTrade');
+}
 function initCategoryPicker(){
+  initSweepTradePicker();
   const sel=$('pubCategory');if(!sel)return;
   if(!sel.options.length){
     sel.innerHTML='<option value="">— choose the marketplace category —</option>'+
@@ -2304,7 +2731,19 @@ function autoSelectTop(n){
        .slice(0,Math.max(0,n))
        .forEach(l=>{l.alSelect=true;});
 }
+// Tick the top-N ranked keepers in EVERY postcode area (so you publish an even spread, not just the global top).
+function selectTopPerArea(n){
+  n=Math.max(0,n||0);
+  LEADS.forEach(l=>l.alSelect=false);
+  const byArea={};
+  LEADS.filter(l=>l.alVerdict&&l.alVerdict!=='EXCLUDE').forEach(l=>{const a=l.area||'?';(byArea[a]=byArea[a]||[]).push(l);});
+  let total=0;
+  Object.values(byArea).forEach(arr=>{arr.sort((a,b)=>rankVal(a)-rankVal(b)).slice(0,n).forEach(l=>{l.alSelect=true;total++;});});
+  render();updateSelCount();
+  log(`✓ Ticked the top ${n} in each area — ${total} across ${Object.keys(byArea).length} area(s). Adjust any, then ▲ Publish selected.`,'ok');
+}
 function toggleSelect(uid,checked){const l=LEADS.find(x=>x._uid===uid);if(l)l.alSelect=!!checked;updateSelCount();}
+function toggleSelectAll(checked){LEADS.forEach(l=>l.alSelect=!!checked);render();updateSelCount();log(checked?`Ticked all ${LEADS.length} row(s). Untick any you don't want, then ☎ Get contact details / ▲ Publish.`:'Unticked all rows.','ok');}
 function applyTarget(){
   const n=pubTargetN();const e=$('pubTargetEcho');if(e)e.textContent=n;
   if(!LEADS.some(l=>l.alVerdict)){updateSelCount();return;} // nothing vetted yet
@@ -2347,7 +2786,7 @@ async function vetRank(){
   // as TEXT then JSON.parse in a try/catch (so a timeout HTML page / truncated body doesn't crash the run,
   // and we can LOG the real body); retry with backoff; a batch that keeps failing leaves its leads UNVETTED
   // (still in the grid) instead of aborting the whole ranking.
-  const BATCH_SZ=12;
+  const BATCH_SZ=5;   // small batches: once Enrich adds site text, 12/call overran Netlify's function timeout (504). 5/call stays well inside it.
   const batches=[];for(let i=0;i<LEADS.length;i+=BATCH_SZ)batches.push(LEADS.slice(i,i+BATCH_SZ));
   let done=0,ok=false,failedBatches=0,noKey=false;
   const callVet=async(batch)=>{
@@ -2363,10 +2802,15 @@ async function vetRank(){
     catch(e){ throw new Error(`non-JSON response (HTTP ${res.status}) — first 300 chars: ${bodyText.slice(0,300).replace(/\s+/g,' ')}`); }
     return d;
   };
-  for(let bi=0;bi<batches.length;bi++){
+  // Batches now run CONCURRENTLY through a small worker pool instead of one-after-another. Each batch is an
+  // independent Claude call, so waiting for one before starting the next left the browser idle most of the
+  // time — a 473-lead grid took ~20 minutes. Four in flight cuts that to roughly a quarter with identical
+  // results; the pool is kept small deliberately so we stay well inside the API rate limit.
+  const POOL=4; let nextIdx=0;
+  const runOne=async(bi)=>{
     const batch=batches[bi];
     let d=null, lastErr='';
-    for(let attempt=1;attempt<=3&&!d;attempt++){
+    for(let attempt=1;attempt<=3&&!d&&!noKey;attempt++){
       try{
         d=await callVet(batch);
         if(d.skipped&&/no.*key/i.test(d.error||d.reason||'')){noKey=true;d=null;break;}
@@ -2376,14 +2820,19 @@ async function vetRank(){
         if(attempt<3)await new Promise(r=>setTimeout(r,attempt*4000));   // backoff 4s, 8s
       }
     }
-    if(noKey){log('Vet & Rank unavailable — no Anthropic key. Add it in ⚙ Settings or as ANTHROPIC_API_KEY on Netlify.','er');break;}
+    if(noKey)return;
     if(!d){ failedBatches++; batch.forEach(l=>{l.alVerdict='UNVETTED';l.alNotes=('vetting failed: '+lastErr).slice(0,140);}); log(`  ✗ batch ${bi+1} left UNVETTED after 3 tries (${batch.length} lead(s)). Continuing.`,'er'); }
     else { ok=true; (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;
       l.alVerdict=v.verdict;l.alFit=v.fit;l.alQuality=v.quality;l.alNotes=v.reason||'';
       l.alCredentials=v.credentials||'';l.alDescription=v.description||'';
       l.alIndependent=v.independent;l.alGroupQuote=v.groupQuote||'';l.alPscParent=v.pscParent||'';}); }
     done+=batch.length;$('bar').style.width=Math.round(done/LEADS.length*100)+'%';
-  }
+    if(done%50<BATCH_SZ||done>=LEADS.length)log(`  …${done}/${LEADS.length} vetted`,'wn');
+  };
+  await Promise.all(Array.from({length:Math.min(POOL,batches.length)},async()=>{
+    while(!noKey){ const bi=nextIdx++; if(bi>=batches.length)break; await runOne(bi); }
+  }));
+  if(noKey)log('Vet & Rank unavailable — no Anthropic key. Add it in ⚙ Settings or as ANTHROPIC_API_KEY on Netlify.','er');
   if(failedBatches)log(`Vet & Rank: ${failedBatches} batch(es) could not be scored — those leads are marked UNVETTED (still in the grid). ${ok?'The rest are ranked below.':''}`,'wn');
   // Manual supply is hand-verified — the vetter is advisory only. Force APPROVE (never REVIEW/EXCLUDE/UNVETTED)
   // so they rank as accepted, then write them up with the SAME describe.js the publish step uses, so the
@@ -2395,15 +2844,29 @@ async function vetRank(){
      log(`Writing up ${need.length} manual supplier(s) (same write-up as any supplier; uses crawled site text where enrichment found it)…`,'wn');
      const groups={}; need.forEach(l=>{(groups[l.pubCatLabel||l.pubCatId||'supplier']=groups[l.pubCatLabel||l.pubCatId||'supplier']||[]).push(l);});
      for(const [label,items] of Object.entries(groups)){
-       for(let i=0;i<items.length;i+=25){const batch=items.slice(i,i+25);
-         try{
-           const r=await fetch('/.netlify/functions/describe',{method:'POST',body:JSON.stringify({
-             request:label, items:batch.map(l=>({name:l.name,website:l.website,rating:l.rating,reviews:l.reviews,credentials:l.alCredentials||'',memberships:l.memberships||'',register:l.register||'',siteText:l.siteText||''})),
-             anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
-           const d=await r.json();
-           if(d.skipped){log('Manual write-up unavailable'+(d.error?' ('+d.error+')':'')+' — they still publish; copy is written at publish time or edit it in AfterLife.','wn');break;}
-           (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;if(v.description)l.alDescription=v.description;if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
-         }catch(e){log('Manual write-up batch failed — '+e.message,'wn');}
+       // 25 firms per call — each carrying up to 1,800 chars of crawled site text — overran the function's
+       // 26s budget. The gateway then returns an HTML error page and r.json() throws Safari's opaque "string
+       // did not match the expected pattern". Smaller batches stay inside the budget; the response is read as
+       // TEXT first so a non-JSON body is reported honestly instead of crashing the loop.
+       const WBATCH=6;
+       for(let i=0;i<items.length;i+=WBATCH){const batch=items.slice(i,i+WBATCH);
+         let d=null;
+         for(let attempt=1;attempt<=2&&!d;attempt++){
+           try{
+             const r=await fetch('/.netlify/functions/describe',{method:'POST',body:JSON.stringify({
+               request:label, items:batch.map(l=>({name:l.name,website:l.website,rating:l.rating,reviews:l.reviews,credentials:l.alCredentials||'',memberships:l.memberships||'',register:l.register||'',siteText:(l.siteText||'').slice(0,1200)})),
+               anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+             const txt=await r.text();
+             try{ d=JSON.parse(txt); }
+             catch(pe){ throw new Error(r.ok?('unreadable reply: '+txt.slice(0,80)):('HTTP '+r.status+' — the write-up call timed out')); }
+           }catch(e){
+             if(attempt<2){ await new Promise(r2=>setTimeout(r2,3000)); }
+             else log(`Write-up batch ${Math.floor(i/WBATCH)+1} failed — ${e.message}. Those firms publish without copy; you can edit it in AfterLife.`,'wn');
+           }
+         }
+         if(!d)continue;
+         if(d.skipped){log('Manual write-up unavailable'+(d.error?' ('+d.error+')':'')+' — they still publish; copy is written at publish time or edit it in AfterLife.','wn');break;}
+         (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;if(v.description)l.alDescription=v.description;if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
        }
      }
    }}
@@ -2419,6 +2882,15 @@ async function vetRank(){
     const chk=by['CHECK-PSC']||[];
     if(chk.length){log(`⚑ ${chk.length} CHECK-PSC — corporate owner on Companies House, NOT auto-excluded. Confirm the parent yourself:`,'wn');
       chk.forEach(l=>log(`  ${l.name} → parent: ${l.alPscParent||'?'}`,'wn'));}
+    // REMOVE CHAINS from the working grid: move every EXCLUDE-verdict (chains / consolidators / wrong-trade)
+    // and name-flagged suspected-chain row to the excluded list, so the grid holds ONLY keepers. Nothing is
+    // lost — the full row is kept and recoverable via the "excluded" counter / ↩ Restore excluded.
+    const toCut=LEADS.filter(l=>l.alVerdict==='EXCLUDE'||l.suspectedChain);
+    if(toCut.length){
+      toCut.forEach(l=>{ EXCLUDED++; DROPPED.push({name:l.name,reason:l.suspectedChain?'suspected-chain':'vetting-exclude',pattern:l.suspectPattern||l.alNotes||'',area:l.area||'',district:l.district||'?',address:l.address||'',phone:l.phone||'',website:l.website||'',emails:l.emails||'',sources:(l.sources||[]).join('+'),rating:l.rating,reviews:l.reviews,_lead:l}); });
+      LEADS=LEADS.filter(l=>!(l.alVerdict==='EXCLUDE'||l.suspectedChain));
+      log(`↩ Removed ${toCut.length} chain / excluded row(s) from the grid to the excluded list — the grid now shows keepers only. Click the "excluded" counter or ↩ Restore excluded to see/recover them.`,'wn');
+    }
     const keepers=LEADS.filter(l=>l.alVerdict&&l.alVerdict!=='EXCLUDE').length;
     reportSlots('SELLABLE SLOTS by area (distinct independent companies, chains excluded)',{excludeVerdict:true});
     log(`Ranked ${keepers} keeper(s) (sorted best-first in the # column). Nothing is selected — YOU choose. Tick the ones you want in the ✓ column, then ▲ Publish selected: we'll write up each pick and send them to AfterLife. (Optional: "Select top N" pre-ticks the top N by our rank if you'd rather start from that.)`,'ok');
@@ -2448,6 +2920,177 @@ function dl(blob,filename){
   document.body.appendChild(a);a.click();
   setTimeout(()=>{try{document.body.removeChild(a);}catch(e){}URL.revokeObjectURL(url);},1500);
 }
+function copyNoWebsite(){
+  const rows=LEADS.filter(l=>!l.website);
+  if(!rows.length){log('Every company in the grid already has a website — nothing to copy.','ok');return;}
+  const urlOf=l=>{const n=(l.importRaw&&(l.importRaw.NOTES||l.importRaw.notes))||l.notes||l.sourceUrl||'';const m=String(n).match(/https?:\/\/\S+/);return m?m[0]:'';};
+  const tsv='COMPANY\tAREA\tTOWN\tPROFILE / SOURCE\n'+rows.map(l=>[l.name,l.area||'',l.town||'',urlOf(l)].join('\t')).join('\n');
+  const done=()=>log(`⧉ Copied ${rows.length} company(ies) with NO website to your clipboard (COMPANY · AREA · TOWN · profile URL). Paste into a sheet and source their domains.`,'ok');
+  const fallback=()=>{const ta=document.createElement('textarea');ta.value=tsv;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}document.body.removeChild(ta);ok?done():log('Clipboard blocked by the browser — here is the list:\n'+tsv,'wn');};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(tsv).then(done,fallback);
+  else fallback();
+}
+// Paste manually-sourced emails back in — matches each line to a grid row by company name and fills the email.
+// Accepts any format: "Company | email", a markdown table, "Company, email" — it just finds the email and the name.
+function fillEmailsPaste(){
+  const txt=prompt('Paste your Claude answer — company names with their WEBSITES (and emails if you have them), any layout. It matches each to the right grid row:');
+  if(!txt)return;
+  const norm=s=>String(s||'').toLowerCase().replace(/&/g,'and').replace(/\b(ltd|limited|llp|plc|the|co)\b/g,'').replace(/[^a-z0-9]/g,'');
+  const EMAIL=/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i;
+  const isJunk=p=>!p||/^\+?[\d\s()().\-]{6,}$/.test(p)||/^(https?:\/\/|www\.)/i.test(p)||/^(company|email|name|phone|website|contact)$/i.test(p);
+  // 1) flatten the paste into an ordered token stream of names + emails + websites (skip phones/headers)
+  const URLRE=/(?:https?:\/\/|www\.)[^\s|,;]+|\b[a-z0-9][a-z0-9-]*\.(?:co\.uk|org\.uk|uk\.com|com|net|org|io|co)\b(?:\/[^\s|,;]*)?/i;
+  const toks=[];
+  txt.split(/\n+/).forEach(line=>{
+    line.split(/\s*[|,;\t]\s*/).forEach(raw=>{
+      let p=raw.replace(/mailto:/gi,'').replace(/[*`<>\[\]]/g,'').replace(/\+?\d[\d\s()\-]{8,}\d/g,' ').replace(/\s{2,}/g,' ').trim(); if(!p)return;   // also strip inline phone numbers
+      const em=(p.match(EMAIL)||[])[0];
+      if(em){ const rest=p.replace(em,'').replace(/[-–—:]+/g,' ').trim(); if(rest&&!isJunk(rest)) toks.push({t:'name',v:rest}); toks.push({t:'email',v:em}); return; }
+      const w=(p.match(URLRE)||[])[0];
+      if(w){ const rest=p.replace(w,'').replace(/[-–—:]+/g,' ').trim(); if(rest&&!isJunk(rest)) toks.push({t:'name',v:rest}); toks.push({t:'web',v:w}); return; }
+      if(!isJunk(p)) toks.push({t:'name',v:p});
+    });
+  });
+  // 2) pair each email/website with the NEAREST name (prefer the one just before it, else just after)
+  let filledE=0,filledW=0; const misses=[];
+  toks.forEach((tok,i)=>{
+    if(tok.t!=='email'&&tok.t!=='web')return;
+    let ni=-1;
+    for(let j=i-1;j>=0;j--){ if(toks[j].t==='name'){ni=j;break;} }
+    if(ni<0) for(let j=i+1;j<toks.length;j++){ if(toks[j].t==='name'){ni=j;break;} }
+    if(ni<0){ misses.push(tok.v); return; }
+    const key=norm(toks[ni].v); if(!key){misses.push(toks[ni].v);return;}
+    const lead=LEADS.find(l=>{const k=norm(l.name);return k&&(k===key||(k.length>4&&key.length>4&&(k.includes(key)||key.includes(k))));});
+    if(!lead){misses.push(toks[ni].v);return;}
+    if(tok.t==='email'){ lead.emails=tok.v; lead.emailManual=true; filledE++; }
+    else { let u=tok.v; if(!/^https?:\/\//i.test(u))u='https://'+u; lead.website=u; lead.websiteManual=true; filledW++; }
+  });
+  render();setStats();
+  log(`⧉ Filled ${filledW} website(s) and ${filledE} email(s) from your paste onto matching rows.${misses.length?` No grid match for: ${misses.slice(0,8).join('; ')} — if a firm was excluded, ↩ Restore excluded first, then paste again.`:''}`,(filledW+filledE)?'ok':'wn');
+}
+// Manually remove the ticked rows from the grid → excluded list (recoverable).
+/* Opposite of removeSelected: park everything you did NOT tick, so the grid is exactly the rows you intend
+   to upload. Enrich and Vet & Rank then run only on those — no crawling or scoring firms you're not sending.
+   Nothing is lost: the untickeds go to the excluded list and ↩ Restore excluded brings them all back. */
+function keepOnlySelected(){
+  const keep=LEADS.filter(l=>l.alSelect);
+  const drop=LEADS.filter(l=>!l.alSelect);
+  if(!keep.length){log('Nothing is ticked — tick the rows you want to KEEP first (✓ column), then press this.','wn');return;}
+  if(!drop.length){log('Every row is already ticked — nothing to remove.','ok');return;}
+  if(!confirm(`Keep the ${keep.length} ticked row(s) and move the other ${drop.length} to the excluded list?\n\nNothing is deleted — ↩ Restore excluded brings them back.`))return;
+  drop.forEach(l=>DROPPED.push({name:l.name,reason:'not-selected',pattern:'',area:l.area||'',district:l.district||'?',address:l.address||'',phone:l.phone||'',website:l.website||'',emails:l.emails||'',sources:(l.sources||[]).join('+'),rating:l.rating,reviews:l.reviews,_lead:l}));
+  LEADS=keep; EXCLUDED=DROPPED.length;
+  render();setStats();
+  log(`✂ Kept your ${keep.length} ticked row(s); moved ${drop.length} unticked to the excluded list. ✦ Enrich and ⚖ Vet & Rank will now run on these ${keep.length} only. (↩ Restore excluded to bring the rest back.)`,'ok');
+}
+function removeSelected(){
+  const sel=LEADS.filter(l=>l.alSelect);
+  if(!sel.length){log('Tick the rows you want to remove first (✓ column), then Remove selected.','wn');return;}
+  if(!confirm(`Remove ${sel.length} ticked row(s) from the grid? They go to the excluded list — recover any via ↩ Restore excluded.`))return;
+  const ids=new Set(sel.map(l=>l._uid));
+  sel.forEach(l=>DROPPED.push({name:l.name,reason:'manually-removed',pattern:'',area:l.area||'',district:l.district||'?',address:l.address||'',phone:l.phone||'',website:l.website||'',emails:l.emails||'',sources:(l.sources||[]).join('+'),rating:l.rating,reviews:l.reviews,_lead:l}));
+  LEADS=LEADS.filter(l=>!ids.has(l._uid)); EXCLUDED=DROPPED.length;
+  render();setStats();
+  log(`✕ Removed ${sel.length} row(s) to the excluded list (↩ Restore excluded to recover).`,'ok');
+}
+/* ---------- NATIONAL SWEEP (card 4): one trade, whole country, district-spread, reserve overflow, taken registry ---------- */
+let SWEEP={running:false,stop:false,main:[],reserve:[],trade:''};
+const SWEEP_CHAIN=/\b(co-?op|dignity|funeral partners|st\.? ?james|sjp|quilter|openwork|true potential|nfu mutual|specsavers|interflora|tesco|sainsbury|greggs|home instead|helping hands|right at home|alina|surecare|bluebird care|caremark|radfield|visiting angels|walfinch|comfort keepers|promedica|guardian angel|prestige nursing|city & county|mears|allied healthcare|careline|abbots care|heritage healthcare|kare plus|nurseplus|home care preferred|cera care)\b/i;
+const sweepDistOf=a=>{const m=String(a||'').toUpperCase().match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*\d[A-Z]{2}\b/);return m?m[1]:'';};
+const sweepDom=w=>{try{return new URL(w).hostname.replace(/^www\./,'').toLowerCase();}catch(e){return'';}};
+const sweepKey=slug=>'pp_taken_'+slug;
+function loadSweepTaken(slug){try{return new Set(JSON.parse(localStorage.getItem(sweepKey(slug))||'[]'));}catch(e){return new Set();}}
+function clearSweepTaken(){const t=($('sweepTrade').value||'').trim();if(!t){log('Choose a supplier type from the dropdown first.','wn');return;}const slug=t.toLowerCase().replace(/[^a-z0-9]+/g,'_');localStorage.removeItem(sweepKey(slug));log(`Cleared the "already captured" list for ${t} — the next sweep starts fresh.`,'ok');}
+async function sweepDetails(ids){if(!ids.length)return{};try{const r=await fetch('/.netlify/functions/placedetails',{method:'POST',body:JSON.stringify({placeIds:ids,googleKey:localStorage.getItem('pp_Google')||undefined})});const d=await r.json();const by={};(d.results||[]).forEach(x=>by[x.placeId]=x);return by;}catch(e){return{};}}
+async function runNationalSweep(){
+  if(MODE!=='functions'){log('National sweep needs the deployed tool (functions offline).','er');return;}
+  const trade=($('sweepTrade').value||'').trim(); if(!trade){log('Choose a supplier type from the dropdown first.','er');return;}
+  if(SWEEP.running)return;
+  const N=Math.max(1,+($('sweepN').value||10)); const spread=$('sweepSpread').checked; const skipTaken=$('sweepSkipTaken').checked;
+  const slug=trade.toLowerCase().replace(/[^a-z0-9]+/g,'_'); const taken=skipTaken?loadSweepTaken(slug):new Set();
+  let sweptSuppressed=0;   // firms skipped because the shared database already holds them
+  let osmThrottled=0;      // areas where OpenStreetMap rate-limited us — NOT areas with no firms
+  SWEEP={running:true,stop:false,main:[],reserve:[],trade};
+  $('sweepRunBtn').disabled=true;$('sweepDlBtn').disabled=true;$('sweepDlResBtn').disabled=true;
+  let areas=Object.keys(AREA_TOWNS).sort(); const af=($('sweepAreas').value||'').trim().toUpperCase(); if(af){const want=af.split(/[^A-Z]+/).filter(Boolean);areas=areas.filter(a=>want.includes(a));} let ai=0;
+  if(!areas.length){log('No matching areas — check the Areas box (e.g. CO, CM) or leave it blank for all.','er');SWEEP.running=false;$('sweepRunBtn').disabled=false;return;}
+  try{
+    for(const area of areas){
+      if(SWEEP.stop){log('Sweep stopped — what we captured is downloadable below.','wn');break;}
+      ai++; const town=areaTown(area);
+      // AUTO-ROUTER: Prospector picks the source itself — Companies House (free, comprehensive) for
+      // register-able trades, Google Places for sole-trader/premise trades. One call, no model choice.
+      let locs; try{locs=areaCentres(area);}catch(e){locs=null;} if(!locs||!locs.length)locs=[town];
+      locs=[town].concat(locs||[]).filter((v,i,a)=>v&&a.indexOf(v)===i).slice(0,5);
+      let disc={};
+      try{ disc=await (await fetch('/.netlify/functions/discover',{method:'POST',body:JSON.stringify({trade,area,locations:locs,googleKey:localStorage.getItem('pp_Google')||undefined})})).json(); }
+      catch(e){ disc={results:[],error:e.message}; }
+      if(disc.error){ log(`${area}: discover error — ${disc.error}`,'wn'); }
+      const src=disc.source||'?';
+      // Count firms the database already held. Without this a sweep that finds nothing NEW reports a bare
+      // "0 captured", which reads as a broken search when it actually means "you already have them all".
+      sweptSuppressed += (disc.suppressed||0);
+      if(disc.osmUnavailable){ osmThrottled++; }
+      const nk=s=>String(s||'').toLowerCase().replace(/&/g,'and').replace(/\b(ltd|limited|llp|plc|the|co)\b/g,'').replace(/[^a-z0-9]/g,'');
+      const pool=[];
+      for(const c of (disc.results||[])){
+        const key='n:'+nk(c.name)+'|'+area;
+        if(taken.has(key)||(c.placeId&&taken.has(c.placeId)))continue;
+        pool.push({name:c.name,area,district:c.district||'',town,website:c.website||'',phone:c.phone||'',placeId:c.placeId||'',companyNumber:c.companyNumber||'',source:src});
+      }
+      let picked=[];
+      if(spread){const byD={};pool.forEach(p=>(byD[p.district]=byD[p.district]||[]).push(p));const ds=Object.keys(byD).sort();let round=0;
+        while(picked.length<N){let added=0;for(const d of ds){if(picked.length>=N)break;if(byD[d][round]){picked.push(byD[d][round]);added++;}}if(!added)break;round++;}}
+      else picked=pool.slice(0,N);
+      const rest=pool.filter(p=>picked.indexOf(p)<0);
+      picked.forEach(p=>{SWEEP.main.push(p);taken.add('n:'+nk(p.name)+'|'+area);if(p.placeId)taken.add(p.placeId);});
+      rest.forEach(p=>SWEEP.reserve.push(p));
+      $('sweepStatus').textContent=`${area} (${ai}/${areas.length}) [${src}] — kept ${picked.length}, reserve ${rest.length}. Total: ${SWEEP.main.length} captured · ${SWEEP.reserve.length} reserve.`;
+      $('bar').style.width=Math.round(ai/areas.length*100)+'%';
+    }
+  }catch(e){log('Sweep error — '+e.message+'. What we captured is still downloadable.','er');}
+  if(skipTaken){try{localStorage.setItem(sweepKey(slug),JSON.stringify([...taken]));}catch(e){}}
+  SWEEP.running=false;$('sweepRunBtn').disabled=false;$('bar').style.width='100%';
+  $('sweepDlBtn').disabled=!SWEEP.main.length;$('sweepDlResBtn').disabled=!SWEEP.reserve.length;$('sweepLoadBtn').disabled=!SWEEP.main.length;
+  $('sweepStatus').textContent=`Done — ${SWEEP.main.length} captured · ${SWEEP.reserve.length} reserve. Download below, then import the capture CSV.`;
+  if(osmThrottled){
+    log(`⚠ OpenStreetMap rate-limited ${osmThrottled} of ${areas.length} area(s) — those returned nothing because the free map service throttled us, NOT because there are no firms there. Wait a minute and re-run; already-captured firms are skipped so you lose nothing.`,'wn');
+  }
+  if(!SWEEP.main.length && sweptSuppressed){
+    log(`National sweep complete — 0 NEW firms, because all ${sweptSuppressed} found are ALREADY in your shared database. That is the never-source-twice rule working, not a failed search. Use ⬇ Load stored firms into the grid to work with what you have.`,'ok');
+  } else {
+    log(`National sweep complete — ${SWEEP.main.length} captured (≤${N}/area, auto-sourced) + ${SWEEP.reserve.length} reserve`+
+        (sweptSuppressed?` · ${sweptSuppressed} skipped (already in the database)`:'')+
+        `. → Load captured into the grid, then Enrich → Vet & Rank → publish.`,'ok');
+  }
+}
+function sweepCsv(rows,trade){
+  const COLS=['COMPANY','CATEGORY','AREA','DISTRICT','TOWN','WEBSITE','PHONE','PLACEID'];
+  const e=v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  return [COLS.join(',')].concat(rows.map(p=>[p.name,trade,p.area,p.district,p.town,p.website,p.phone,p.placeId].map(e).join(','))).join('\n');
+}
+// Push the captured batch straight into the working grid (no download/re-import) so Enrich + Vet & Rank run on it.
+async function loadSweepIntoGrid(){
+  if(!SWEEP.main.length){log('Run a sweep first.','wn');return;}
+  await loadManualSupply(sweepCsv(SWEEP.main,SWEEP.trade||'supplier'));
+  log(`Loaded ${SWEEP.main.length} captured firm(s) into the grid. Now: ✦ Enrich (finds website + email) → ⚖ Vet & Rank (keeps genuine independents) → tick → publish. No re-import needed.`,'ok');
+}
+function downloadSweep(which){
+  const rows=which==='reserve'?SWEEP.reserve:SWEEP.main; if(!rows.length){log('Nothing to download yet — run a sweep first.','wn');return;}
+  const trade=SWEEP.trade||'sweep'; const COLS=['COMPANY','CATEGORY','AREA','DISTRICT','TOWN','WEBSITE','PHONE','PLACEID'];
+  const e=v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const csv=[COLS.join(',')].concat(rows.map(p=>[p.name,trade,p.area,p.district,p.town,p.website,p.phone,p.placeId].map(e).join(','))).join('\n');
+  dl(new Blob(['﻿'+csv],{type:'text/csv'}),`${trade.toLowerCase().replace(/[^a-z0-9]+/g,'_')}_${which==='reserve'?'RESERVE':'capture'}.csv`);
+}
+function copyNoEmail(){
+  const rows=LEADS.filter(l=>!emailsOf(l).length);
+  if(!rows.length){log('Every company in the grid already has an email — nothing to copy.','ok');return;}
+  const tsv='COMPANY\tAREA\tTOWN\tWEBSITE\tPHONE\n'+rows.map(l=>[l.name,l.area||'',l.town||'',l.website||'',l.phone||''].join('\t')).join('\n');
+  const done=()=>log(`⧉ Copied ${rows.length} company(ies) with NO email to your clipboard (COMPANY · AREA · TOWN · WEBSITE · PHONE). Paste into a sheet and grab their email from each site.`,'ok');
+  const fallback=()=>{const ta=document.createElement('textarea');ta.value=tsv;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}document.body.removeChild(ta);ok?done():log('Clipboard blocked by the browser — here is the list:\n'+tsv,'wn');};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(tsv).then(done,fallback);
+  else fallback();
+}
 function exportRanked(){
   if(!LEADS.some(l=>l.alVerdict)){log('Run ⚖ Vet & Rank first — the ranked CSV needs verdicts.','er');return;}
   const COLS=['AL_PRIORITY',...BREVO_COLS,'AL_VERDICT','AL_BATCH','AL_STATUS','AL_FIT','AL_QUALITY','AL_SOURCES','AL_NOTES','AL_DESCRIPTION'];
@@ -2468,6 +3111,14 @@ async function publishAfterLife(){
   const approve=LEADS.filter(l=>l.alSelect);
   if(!approve.length){log('Nothing selected — tick the suppliers you want in the ✓ column, then Publish. (Nothing is pre-selected; you choose.)','er');return;}
   if(running)return;
+  // Coverage gate (item 6): if the standing coverage check ran and the tool found <70% of the
+  // hand-counted benchmark, block publish — discovery is missing firms. Overridable with a confirm.
+  if(window.__coverage && window.__coverage.pass===false){
+    const c=window.__coverage;
+    const detail=`${c.area}: found ${c.found} vs benchmark ${c.benchmark} = ${Math.round(c.cov*100)}%`;
+    log(`Publish blocked by coverage check — ${detail}. Improve discovery (district tiling / widen terms) and re-run coverageCheck().`,'er');
+    if(!confirm(`⚠ Coverage is below ${Math.round(COV_MIN*100)}% of your hand-counted benchmark (${detail}). The sweep is likely missing firms.\n\nPublish anyway?`))return;
+  }
   // Publish under the CANONICAL AfterLife category id, not a free-text slug —
   // otherwise the marketplace box greys out because nothing matches the query.
   const catId=($('pubCategory').value||'').trim();
@@ -2534,14 +3185,29 @@ async function publishAfterLife(){
   const multi=Object.entries(rootAreas).filter(([r,as])=>as.size>1);
   if(multi.length)log(`${multi.length} multi-area firm(s) publishing as ONE SLOT PER AREA (shared COMPANY_ID root): `+multi.slice(0,6).map(([r,as])=>`${r} [${[...as].sort().join(',')}]`).join('; '),'ok');
   log(`Publishing ${suppliers.length} supplier record(s) to AfterLife (one per firm per area)…`,'wn');
+  // Send in CHUNKS. One big request makes AfterLife's importer exceed its function timeout and the
+  // gateway returns a 502 with nothing imported — a whole batch lost. Chunking keeps each request
+  // well inside the limit, and a failure now costs only that chunk: everything before it is already in.
+  const CHUNK=25; let imported=0, sent=0, failed=0; const allErrors=[];
   try{
-    const r=await fetch('/.netlify/functions/publish',{method:'POST',body:JSON.stringify({suppliers})});
-    const d=await r.json();
-    if(!d.ok){log('Publish failed — '+(d.error||'unknown error'),'er');}
-    else{
-      log(`✓ Published ${d.imported} of ${d.sent} selected lead(s) to AfterLife as “pending”. Approve them at afterlife.ltd/admin/suppliers.`,'ok');
-      if(d.errors&&d.errors.length)log(`  ${d.errors.length} record(s) reported an error on import: `+d.errors.slice(0,5).map(e=>(e.name||'?')+' ('+e.error+')').join('; '),'wn');
+    for(let i=0;i<suppliers.length;i+=CHUNK){
+      const part=suppliers.slice(i,i+CHUNK);
+      try{
+        const r=await fetch('/.netlify/functions/publish',{method:'POST',body:JSON.stringify({suppliers:part})});
+        let d=null; try{ d=await r.json(); }catch(e){ d=null; }
+        if(!r.ok||!d||!d.ok){
+          failed+=part.length;
+          log(`  chunk ${Math.floor(i/CHUNK)+1} failed (HTTP ${r.status}${d&&d.error?' — '+d.error:''}) — ${part.length} record(s) not sent.`,'er');
+        }else{
+          imported+=(d.imported||0); sent+=(d.sent||part.length);
+          if(d.errors&&d.errors.length)allErrors.push(...d.errors);
+        }
+      }catch(e){ failed+=part.length; log(`  chunk ${Math.floor(i/CHUNK)+1} error — ${e.message}`,'er'); }
+      if(suppliers.length>CHUNK)log(`  …${Math.min(i+CHUNK,suppliers.length)}/${suppliers.length} sent · ${imported} imported${failed?` · ${failed} failed`:''}`,'wn');
     }
+    if(imported)log(`✓ Published ${imported} of ${sent} selected lead(s) to AfterLife as “pending”. Approve them at afterlife.ltd/admin/suppliers.`,failed?'wn':'ok');
+    if(failed)log(`${failed} record(s) did NOT publish — re-tick just those and run Publish again (already-published ones are safe to re-send, they upsert).`,'er');
+    if(allErrors.length)log(`  ${allErrors.length} record(s) reported an error on import: `+allErrors.slice(0,5).map(e=>(e.name||'?')+' ('+e.error+')').join('; '),'wn');
   }catch(e){log('Publish error — '+e.message,'er');}
   running=false;setStats();
 }
@@ -2566,7 +3232,7 @@ async function verifyRegister(){
   if(MODE!=='functions'){log('Register verification needs the Netlify deployment (functions offline).','er');return;}
   if(!LEADS.length){log('Run a sweep first.','er');return;}
   if(running)return;
-  const reqText=$('term').value+' '+($('sic').value||'');
+  const reqText=$('term').value+' '+(($('sic')&&$('sic').value)||'');
   const auth=pickAuthority(reqText);
   if(!auth){log('No official register governs this category (Tier 3 — e.g. florists, printers, photographers). Google Places IS the right source here; quality comes from the relevance filter and review thresholds, not a register.','wn');return;}
   if(auth.reg==='fca'){return fcaVerify();}
@@ -2670,6 +3336,61 @@ async function universeCheck(){
     window.__universe=uni;
     log('Tip: export this universe with exportUniverse() in the browser console, or use these names to widen your search terms.','wn');
   }catch(e){log('Universe check error — '+e.message,'er');}
+}
+/* ---------- Standing coverage check (item 6) ----------
+   Gate = the tool's discovery in one dense urban area vs a HAND-COUNTED benchmark for that
+   category, entered manually. OSM is NOT trustworthy as ground truth — it under-lists exactly
+   the urban areas where discovery fails (it found 14 florists in AL where Google found 94; it
+   would have rubber-stamped the SE-London funeral gap). So the benchmark is the gate; OSM is
+   shown only as context. Seeded with Dan's own count: SE London funeral directors = 14.
+   Add/replace a benchmark with setBenchmark('<category term>','SE',14) — one figure you counted
+   yourself for a dense urban area. If the tool finds <70% of the benchmark, Publish is blocked. */
+const COV_MIN=0.70;
+const BENCH_SEED={ 'funeral directors':{area:'SE',town:'South East London',count:14,by:'hand-counted'} };
+const benchKey=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+function getBenchmarks(){ try{ return Object.assign({},BENCH_SEED,JSON.parse(localStorage.getItem('pp_benchmarks')||'{}')); }catch(e){ return Object.assign({},BENCH_SEED); } }
+function setBenchmark(term,area,count,town){
+  let b={}; try{ b=JSON.parse(localStorage.getItem('pp_benchmarks')||'{}'); }catch(e){}
+  const k=benchKey(term); b[k]={area:(area||'').toUpperCase(),town:town||areaTown(area),count:Number(count),by:'hand-counted'};
+  localStorage.setItem('pp_benchmarks',JSON.stringify(b));
+  log(`Benchmark saved: “${k}” = ${count} in ${(area||'').toUpperCase()} (${b[k].town}).`,'ok'); return b[k];
+}
+function editBenchmark(){
+  const term=prompt('Category term to benchmark (e.g. "funeral directors"):',(($('term')&&$('term').value)||'funeral directors').trim()); if(term===null)return;
+  const area=prompt('Dense urban postcode AREA you counted (e.g. SE):','SE'); if(area===null)return;
+  const count=prompt(`How many ${term} did you count by hand in ${area.toUpperCase()}?`,'14'); if(count===null)return;
+  if(!(Number(count)>0)){log('Benchmark must be a positive number.','er');return;}
+  setBenchmark(term,area,Number(count));
+}
+// Discover the tool's real coverage for one area: area-level call first, district-tile as fallback
+// only if area-level comes back below the target (mirrors the item-4/5 sweep mode). Deduped by name.
+async function discoverForBenchmark(req,area,target){
+  const town=areaTown(area); const seen=new Map();
+  const add=arr=>(arr||[]).forEach(r=>{const k=normTxt(r.name); if(k&&!seen.has(k))seen.set(k,r);});
+  try{ const g=await searchDistrict(`${req} in ${town}`,3); if(!g.error)add(g.results);}catch(e){}
+  if(seen.size<target){ // fallback: tile districts until we clearly clear the benchmark (cap to limit cost)
+    const ds=districtsForArea(area);
+    for(const d of ds){ if(seen.size>=Math.ceil(target*1.5))break; try{ const g=await searchDistrict(`${req} in ${d}`,2); if(!g.error)add(g.results);}catch(e){} }
+  }
+  return [...seen.values()];
+}
+async function coverageCheck(){
+  if(MODE!=='functions'){log('Coverage check needs the Netlify deployment (functions offline).','er');return;}
+  const req=(($('term')&&$('term').value)||'').trim()||'funeral directors';
+  const b=getBenchmarks()[benchKey(req)];
+  if(!b||!(b.count>0)){
+    log(`No hand-counted benchmark for “${benchKey(req)}”. Publish is NOT gated until you set one — click “Set benchmark…” (or run setBenchmark('${benchKey(req)}','SE',14)). Enter a figure you counted yourself in a dense urban area.`,'wn');
+    window.__coverage={pass:true,reason:'no-benchmark',term:benchKey(req),at:Date.now()}; return;
+  }
+  const town=b.town||areaTown(b.area);
+  log(`◎ Coverage check — “${req}” in ${b.area} (${town}) vs your hand-counted benchmark of ${b.count}…`,'wn');
+  const found=await discoverForBenchmark(req,b.area,b.count);
+  const F=found.length, cov=F/b.count;
+  let osm=null; try{ const o=await fetch('/.netlify/functions/freesearch',{method:'POST',body:JSON.stringify({source:'osm',request:req,district:b.area+'1'})}); const od=await o.json(); osm=(od.results||[]).length; }catch(e){}
+  window.__coverage={pass:cov>=COV_MIN,cov,found:F,benchmark:b.count,area:b.area,town,osm,term:benchKey(req),at:Date.now()};
+  log(`  ${b.area} · ${town}: tool discovered ${F} vs benchmark ${b.count} → ${Math.round(cov*100)}%` + (osm!=null?`  (OSM context only: ${osm})`:''), cov>=COV_MIN?'ok':'er');
+  if(cov<COV_MIN) log(`⚠ Below ${Math.round(COV_MIN*100)}% of the hand-counted benchmark — PUBLISH BLOCKED. Turn on district tiling / widen the search terms, then re-run the coverage check.`,'er');
+  else log(`✓ ${Math.round(cov*100)}% of the ${b.area} benchmark — publish not blocked by coverage.`,'ok');
 }
 function exportUniverse(){
   const u=window.__universe||[];if(!u.length){log('Run the universe check first.','er');return;}
@@ -2792,5 +3513,6 @@ try{initRegisterSupply();}catch(e){}
 try{initManualSupply();}catch(e){}
 log('Build v15 loaded — nothing is pre-selected; you tick your own picks, and we write up ONLY the ones you tick before sending. Click 🩺 System check to verify keys + functions before sweeping.','ok');
 </script>
+<!-- build:1785272069230 -->
 </body>
 </html>
