@@ -60,18 +60,43 @@ exports.handler = async (event) => {
     if (action === "get") {
       // PostgREST caps a single response (default 1000 rows), which silently truncated big trades. Page with
       // Range headers until a short page comes back, so the caller always gets the FULL set.
+      //
+      // `offset` lets a caller walk the whole table in slices. Netlify caps a function response at 6MB, so
+      // "give me everything" in one call fails for the larger trades — a backup has to page through instead.
       const want = Math.min(+body.limit || 20000, 50000);
-      const base = REST + `?select=*${q("trade", body.trade)}${q("area", (body.area || "").toUpperCase())}&order=area,name`;
+      const skip = Math.max(0, +body.offset || 0);
+      const base = REST + `?select=*${q("trade", body.trade)}${q("area", (body.area || "").toUpperCase())}&order=id`;
       const all = []; const STEP = 1000;
       for (let from = 0; from < want; from += STEP) {
         const to = Math.min(from + STEP - 1, want - 1);
-        const r = await fetch(base, { headers: { ...H, Range: `${from}-${to}`, "Range-Unit": "items" } });
+        const r = await fetch(base, { headers: { ...H, Range: `${skip + from}-${skip + to}`, "Range-Unit": "items" } });
         if (!r.ok) { if (!all.length) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, status: r.status }) }; break; }
         const chunk = await r.json();
         all.push(...chunk);
         if (chunk.length < STEP) break;
       }
-      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, count: all.length, results: all }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, count: all.length, offset: skip, results: all }) };
+    }
+
+    if (action === "stats") {
+      // What is actually in the store, by trade and by area. Pulls only two short columns so the whole table
+      // fits comfortably in one response, then counts here — PostgREST has no GROUP BY without a stored view.
+      const all = []; const STEP = 1000;
+      for (let from = 0; from < 60000; from += STEP) {
+        const r = await fetch(REST + "?select=trade,area&order=id",
+          { headers: { ...H, Range: `${from}-${from + STEP - 1}`, "Range-Unit": "items" } });
+        if (!r.ok) break;
+        const chunk = await r.json();
+        all.push(...chunk);
+        if (chunk.length < STEP) break;
+      }
+      const byTrade = {}, byArea = {};
+      for (const r of all) {
+        const t = r.trade || "(no trade)"; const a = r.area || "(no area)";
+        byTrade[t] = (byTrade[t] || 0) + 1;
+        byArea[a] = (byArea[a] || 0) + 1;
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, total: all.length, trades: Object.keys(byTrade).length, byTrade, byArea }) };
     }
 
     return { statusCode: 200, headers, body: JSON.stringify({ error: "unknown action" }) };
