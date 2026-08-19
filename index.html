@@ -251,6 +251,10 @@ td a:hover{text-decoration:underline}
       <button class="ghost small" id="detailsBtn" onclick="getContactDetails()" disabled style="width:100%;margin-top:8px">☎ Get contact details for selected <span class="muted">(Google Place Details + crawl)</span></button>
       <div class="muted" style="font-size:11px;margin-top:3px">Buys website + phone (separate Place Details SKU, own 5,000/mo free) only for the ticked keepers, then crawls each site for an email.</div>
       <button class="ghost small" id="publishBtn" onclick="publishAfterLife()" disabled style="width:100%;margin-top:8px">▲ Publish selected to AfterLife</button>
+      <button class="ghost small" id="publishCrmBtn" onclick="publishCRM()" disabled style="width:100%;margin-top:8px">▲ Publish selected to the Sales CRM</button>
+      <div class="muted" style="font-size:11px;margin-top:3px">Sends the ticked leads (with phone &amp; email) to the CRM approval queue — nothing reaches a rep's pipeline until it's reviewed there.</div>
+      <button class="ghost small" style="width:100%;margin-top:6px" onclick="publishMasterCRM()">▲ Publish MASTER to the Sales CRM</button>
+      <div class="muted" style="font-size:11px;margin-top:3px">Sends every master-set lead to the CRM approval queue, badged <b>Unvetted</b> — the reviewer does the vetting there. Safe to re-run; already-imported rows just refresh.</div>
     </div>
   </aside>
   <section class="work">
@@ -2758,6 +2762,7 @@ function updateSelCount(){
     else sc.innerHTML=sel?`You picked <b>${sel}</b> — these will be published.`+(exSel?` <span class="er">${exSel} of them were EXCLUDED by vetting.</span>`:''):'None picked yet — tick the suppliers you want in the ✓ column.';
   }
   const pb=$('publishBtn');if(pb){pb.disabled=!sel||running;pb.textContent=`▲ Publish ${sel||''} selected to AfterLife`.replace(/\s{2,}/g,' ');}
+  const cb=$('publishCrmBtn');if(cb){cb.disabled=!sel||running;cb.textContent=`▲ Publish ${sel||''} selected to the Sales CRM`.replace(/\s{2,}/g,' ');}
   const db=$('detailsBtn');if(db)db.disabled=!sel||running;
 }
 function rankLeads(){
@@ -2910,6 +2915,69 @@ function brevoRow(l){
     ADDRESS:l.address||'',POSTCODE:pc,DISTRICT:l.district||'',POSTCODE_AREA:l.area||'',CATEGORY:term,
     RATING:l.rating??'',REVIEWS:l.reviews||'',INDEPENDENT:l.independent||'',REGISTER:l.register||'',
     FCA_STATUS:l.fca||l.reg||'',FRN:l.frn||'',COMPANY_NUMBER:l.companyNo||''};
+}
+/* ---------- publish to the Sales CRM (approval queue on the generator site) ---------- */
+// One lead -> one CRM intake row. Phone and email ARE sent (sales pipeline, not
+// the public directory). vetted marks Vet&Rank provenance; master rows go false.
+function crmRow(l,vetted){
+  return {
+    name:l.name||'', contact:l.contact||'', phone:l.phone||'', emails:l.emails||'',
+    website:l.website||'', address:l.address||'', district:l.district||'',
+    area:l.batchArea||l.area||'',
+    category_raw:l.pubCatLabel||l.batchCategory||(($('term').value||'').split('\n')[0].trim()),
+    rating:l.rating??'', reviews:l.reviews||'', independent:l.independent||'',
+    register:l.register||l.memberships||'', reg_status:l.fca||l.reg||l.regStatus||'', frn:l.frn||'',
+    companyNo:l.companyNo||'', placeId:l.placeId||'',
+    sources:(l.sources||[]).join('+')+(l.memberships?(' ['+l.memberships+']'):''),
+    priority:l.alPriority??'', verdict:l.alVerdict||'', batch:l.alBatch||AL_BATCH_ID||'',
+    AL_STATUS:l.alStatus||'', fit:l.alFit??'', quality:l.alQuality??'',
+    notes:l.alNotes||'', description:l.alDescription||'', vetted:!!vetted
+  };
+}
+async function crmPost(mode,rows){
+  const chunks=[];for(let i=0;i<rows.length;i+=200)chunks.push(rows.slice(i,i+200));
+  const tot={inserted:0,refreshed:0,inPipeline:0,partnerFlagged:0,emailDupes:0,invalid:0};
+  for(let i=0;i<chunks.length;i++){
+    log(`  CRM publish ${i+1}/${chunks.length} (${chunks[i].length} rows)…`);
+    const r=await fetch('/.netlify/functions/publishcrm',{method:'POST',body:JSON.stringify({mode,rows:chunks[i]})});
+    const d=await r.json();
+    if(!d.ok)throw new Error(d.error||'CRM publish failed');
+    ['inserted','refreshed','inPipeline','partnerFlagged','emailDupes','invalid'].forEach(k=>tot[k]+=(d[k]||0));
+  }
+  return tot;
+}
+function crmSummary(t){
+  let s=`${t.inserted} new in the approval queue, ${t.refreshed} refreshed`;
+  if(t.inPipeline)s+=`, ${t.inPipeline} already live in the pipeline (left untouched)`;
+  if(t.partnerFlagged)s+=`, ${t.partnerFlagged} flagged as already invited to AfterLife`;
+  if(t.emailDupes)s+=`, ${t.emailDupes} flagged as email duplicates`;
+  if(t.invalid)s+=`, ${t.invalid} unusable (no firm name)`;
+  return s+'.';
+}
+async function publishCRM(){
+  if(MODE!=='functions'){log('CRM publish needs the Netlify deployment (functions offline).','er');return;}
+  const picks=LEADS.filter(l=>l.alSelect);
+  if(!picks.length){log('Nothing selected — tick the suppliers you want in the ✓ column first.','er');return;}
+  if(running)return;
+  if(!confirm(`Publish ${picks.length} selected lead(s) to the Sales CRM approval queue?\n\nPhone and email go with them (this is the sales pipeline, not the public directory). Nothing reaches a rep's pipeline until it is reviewed and approved in the CRM.`))return;
+  running=true;const b=$('publishCrmBtn');if(b)b.disabled=true;setStats();
+  try{
+    const t=await crmPost('selected',picks.map(l=>crmRow(l,true)));
+    log('CRM publish complete — '+crmSummary(t),'ok');
+  }catch(e){log('CRM publish failed — '+e.message,'er');}
+  running=false;if(b)b.disabled=false;setStats();
+}
+async function publishMasterCRM(){
+  if(MODE!=='functions'){log('CRM publish needs the Netlify deployment (functions offline).','er');return;}
+  if(!BATCH.master.length){log('Nothing in the master set yet — run a batch first (master is held in memory for this session).','er');return;}
+  if(running)return;
+  if(!confirm(`Publish the whole MASTER set (${BATCH.master.length} leads) to the Sales CRM approval queue?\n\nThese are pre-vetting rows — they arrive badged UNVETTED and the reviewer vets them in the queue. Safe to re-run: already-imported rows refresh rather than duplicate.`))return;
+  running=true;setStats();
+  try{
+    const t=await crmPost('master',BATCH.master.map(l=>crmRow(l,false)));
+    log('MASTER → CRM complete — '+crmSummary(t),'ok');
+  }catch(e){log('MASTER → CRM failed — '+e.message,'er');}
+  running=false;setStats();
 }
 /* ---------- single ranked CSV: Brevo columns + AL_* ---------- */
 // Robust file download: some browsers ignore .click() on an anchor that isn't in
