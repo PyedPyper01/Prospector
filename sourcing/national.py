@@ -114,16 +114,24 @@ def outcodes(area):
     """Outcode centroid AND its district name. Both are needed: `ll` on its own is NOT reliably honoured —
     the same Liverpool coordinates returned Brooklyn NY and Cambridge OH on different calls, and Colchester's
     returned Rutherford NJ. Sending `location` alongside pins the search to the right country every time."""
-    def one(n):
-        d = jget(f"https://api.postcodes.io/outcodes/{area}{n}", tries=1)
+    def fetch(code):
+        d = jget(f"https://api.postcodes.io/outcodes/{code}", tries=1)
         r = (d or {}).get("result")
         if not r or r.get("latitude") is None: return None
         districts = r.get("admin_district") or []
         country = (r.get("country") or ["England"])[0]
         town = districts[0] if districts else area
         return (r["outcode"], r["latitude"], r["longitude"], f"{town}, {country}, United Kingdom")
+
+    # Central London outcodes carry a LETTER suffix — EC1A, WC1A, W1B — and no plain EC1 or WC1 exists.
+    # Probing numbers alone found nothing for EC and WC, so both areas were silently skipped entirely.
+    def one(n):
+        hit = fetch(f"{area}{n}")
+        if hit: return [hit]
+        return [h for h in (fetch(f"{area}{n}{L}") for L in "ABCDEHMNPRVXY") if h]
+
     with ThreadPoolExecutor(max_workers=12) as ex:
-        return [x for x in ex.map(one, range(1, 41)) if x]
+        return [x for grp in ex.map(one, range(1, 41)) for x in grp]
 
 def query(q, ll, location):
     CREDITS["n"] += 1
