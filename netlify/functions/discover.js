@@ -1,31 +1,40 @@
-// Unified AUTO-ROUTER discovery. ONE call — Prospector picks the right source for the trade itself, so the
-// operator never chooses a "search model" per supplier type. Given {trade, area, locations[], n}:
-//   • Register-able trades (map to a SIC code + are mostly limited companies) → Companies House (free,
-//     comprehensive, real postcodes) via the chsearch function.
-//   • Everything else (sole-trader / premise trades with no clean SIC) → Google Places.
-// Then a FREE name pre-filter strips the obvious non-consumer noise Companies House returns under a shared
-// SIC (holding / nominee / fund / SPV shells) and obvious national chains — leaving a clean candidate pool
-// per area, ready for the existing enrich → vet → publish steps. Judgment on borderline independence stays
-// with the AI vet; this only removes the clearly-irrelevant before any money is spent.
+// In-app discovery for a trade + postcode area. Free sources only.
+//
+// SCOPE — deliberately narrow. This endpoint is NOT the main sourcing route any more. Real sourcing is done
+// by web research (trade-body directories, then search) run from Claude Code, which returns firms WITH their
+// websites: 96% coverage against 0% for the old Companies House path. What remains here is OpenStreetMap,
+// which maps actual premises and carries website/phone tags, as a quick top-up for one area at a time.
+//
+// Companies House was removed in Aug 2026 — see the note in the handler for why.
+// Google Places is available but OFF unless explicitly requested: it is the only paid source and the standing
+// instruction is free sources only.
+//
+// Everything returned must be (a) the trade asked for and (b) carry a website. A row failing either test is
+// not a lead — it is work for someone else later — so it is dropped here rather than stored and cleaned up
+// afterwards. Counts for what was dropped and why come back in the response.
 
 const SITE = "https://postcodeprospector.netlify.app/.netlify/functions";
 
-// trade keyword → Companies House SIC code(s). If a trade matches here, Companies House is the source.
-const SIC = {
-  "financial advis": ["66220", "66190", "66300"], "ifa": ["66220", "66190", "66300"], "wealth": ["66300", "66220", "66190"],
-  "mortgage": ["66190", "64921"], "pension": ["66300", "66220"], "insurance": ["66220", "66210", "66290"],
-  "funeral": ["96030"], "florist": ["47760"], "solicitor": ["69101", "69102", "69109"], "legal": ["69101", "69102", "69109"],
-  "accountant": ["69201", "69202", "69203"], "estate agent": ["68310"], "letting": ["68320", "68310"],
-  "surveyor": ["71111", "68320"], "architect": ["71111"], "cater": ["56210", "56290"], "wedding": ["56210", "74901", "96090"],
-  "care": ["87100", "87300", "88100", "88910"], "nursing": ["87100", "87300"], "domiciliary": ["88100", "87300"], "residential": ["87100", "87300"],
-  "optician": ["47782"], "vet": ["75000"], "dentist": ["86230"], "physio": ["86900"], "photographer": ["74201"],
-  "will": ["69102", "69109"], "probate": ["69102", "69109"],
-  // NOTE: memorial/monumental masons, celebrants, musicians etc. are DELIBERATELY NOT here. Their SIC codes
-  // are too broad (23700 = all stonework) and pull the wrong firms. They route to Google/web search instead,
-  // which understands them as a TRADE and returns the real firms with their websites.
-  "plumb": ["43220"], "electric": ["43210"], "builder": ["41200", "43999"], "landscap": ["81300"], "cleaning": ["81210", "81220"]
-};
-function sicFor(trade) { const t = String(trade || "").toLowerCase(); for (const k in SIC) { if (t.includes(k)) return SIC[k]; } return null; }
+// Companies House SIC lookup removed with the CH source — see the note in the handler below.
+
+// WRONG-TRADE gate. Each entry lists what is NOT the trade, matched against the firm's name and domain.
+// These are the confusions the free sources actually produce — every florist pattern below came from a real
+// row in the store (ZCSucculents, The Reptile Hut, Swallow Aquatics, Greenbrook Garden Centre).
+const OFF_TRADE = [
+  [/florist|flower/i, /succulent|reptile|aquatic|aquarium|tropical fish|pet |pets\b|petshop|pet shop|garden centre|garden center|nurser(y|ies)|seeds?\b|fertili[sz]|equestrian|feed ?store|coral|vivarium/i],
+  [/funeral director/i, /crematori|cemetery|memorial|mason|florist|monumental/i],
+  [/mason|monumental|headstone/i, /worktop|kitchen|bathroom|tiling|tiles|paving|driveway|landscap|fireplace|granite worktop/i],
+  [/locksmith/i, /auto ?locksmith|car key|key cutting kiosk|hardware|diy|timpson/i],
+  [/solicitor|probate|conveyanc/i, /recruit|training|marketing|will writing software/i],
+  [/celebrant/i, /wedding planner|photograph|venue hire/i],
+  [/photographer/i, /photo booth|passport photo|framing|print shop/i],
+  [/caterer|catering/i, /equipment|supplies|hire ?company|disposable/i],
+];
+function offTradeFor(trade) {
+  const t = String(trade || "").toLowerCase();
+  for (const [re, bad] of OFF_TRADE) if (re.test(t)) return bad;
+  return null;
+}
 
 // FREE noise filter — Companies House shares SIC codes across consumer firms and their admin/fund shells.
 const NOISE = /\b(holdings?|nominees?|trustees?|administrat(or|ion)|liquidity|custodian|deppositary|securitisation|special purpose|spv|bidco|topco|midco|newco|propco|holdco|\b(gp|lp) (limited|ltd)|(no|number) ?\d+ (gp|lp)\b|fund (i{1,3}|iv|v|management|services)|capital partners|private equity|ventures? (fund|capital)|sipp|ssas|self.?invested)\b/i;
@@ -39,10 +48,6 @@ const nkey = s => String(s || "").toLowerCase().replace(/&/g, "and").replace(/\b
 async function post(fn, body) { try { const r = await fetch(SITE + "/" + fn, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); return await r.json(); } catch (e) { return { error: e.message }; } }
 
 // Companies House path — comprehensive, free, real postcodes; website comes later in enrich.
-async function viaCompaniesHouse(trade, area, locations, sics) {
-  const j = await post("chsearch", { trade, area, locations, sic: sics.join(" ") });
-  return { gross: j.grossMatches || (j.results || []).length, cands: (j.results || []).map(f => ({ name: f.name, area: f.area, district: f.district, postcode: f.postcode, address: f.address, companyNumber: f.number, sic: f.sic, website: "", phone: "", source: "companies-house" })) };
-}
 
 // OpenStreetMap path — FREE, and the fix for the "only 28 florists in CO" problem. Companies House by SIC
 // only ever returns limited companies filed under one code, so it misses every sole trader, partnership and
@@ -107,27 +112,39 @@ exports.handler = async (event) => {
     let locations = (Array.isArray(body.locations) && body.locations.length) ? body.locations : (body.town ? [body.town] : [area]);
     if (!trade || !area) return { statusCode: 200, headers, body: JSON.stringify({ error: "need trade + area" }) };
 
-    // MERGE the free sources. Companies House gives the registered universe for a SIC; OSM gives real
-    // premises including sole traders. Either alone comes up thin — CO florists were 28 from CH when the
-    // town plainly has more. Google is only used when explicitly asked for (it is the paid one).
-    const sics = sicFor(trade);
+    // Companies House was REMOVED as a discovery source (Aug 2026). It maps company REGISTRATIONS, not
+    // premises, and two things followed from that:
+    //   1. It holds no website field, so of 804 rows sourced this way exactly 2 had a website — and a website
+    //      is the one field the sales team actually needs.
+    //   2. Its SIC codes bundle unrelated trades. 47760 is officially "Retail sale of flowers, plants, seeds,
+    //      fertilizers, PET ANIMALS and pet food", so asking for florists correctly returned reptile shops,
+    //      aquatics centres, garden centres and fertiliser importers — 25% of that list was off-trade.
+    // Free web research (directories + search, run from Claude Code) returns 96% with websites. That is the
+    // route for discovery now; this endpoint keeps only OSM, which maps real premises and carries site tags.
     const useGoogle = body.google === true;
     const parts = [];
-    if (sics) parts.push(await viaCompaniesHouse(trade, area, locations, sics));
     parts.push(await viaOSM(trade, area, locations));
     if (useGoogle) parts.push(await viaGoogle(trade, area, locations));
 
-    const source = [sics ? "companies-house" : null, "osm", useGoogle ? "google" : null].filter(Boolean).join("+");
+    const source = ["osm", useGoogle ? "google" : null].filter(Boolean).join("+");
     const disc = { gross: parts.reduce((a, p) => a + (p.gross || 0), 0), cands: parts.flatMap(p => p.cands || []) };
     const perSource = {};
     parts.forEach(p => (p.cands || []).forEach(c => { perSource[c.source] = (perSource[c.source] || 0) + 1; }));
 
-    // in-area + FREE noise/chain pre-filter + de-dupe by name
+    // in-area + noise/chain pre-filter + WRONG-TRADE gate + WEBSITE gate + de-dupe by name.
+    //
+    // The last two are the point of this block. Previously anything discovered was stored and then cleaned up
+    // downstream, which is how a florist list ended up 25% garden centres, pet shops and aquatics dealers with
+    // no websites. A row that is the wrong trade, or has no website, is not a lead — so it never gets stored.
     const seenN = new Set(); const clean = [];
+    const dropped = { outOfArea: 0, noise: 0, wrongTrade: 0, noWebsite: 0, duplicate: 0 };
+    const offTrade = offTradeFor(trade);
     for (const c of disc.cands) {
-      if (c.area && c.area !== area) continue;
-      if (NOISE.test(c.name) || CHAIN.test(c.name)) continue;
-      const k = nkey(c.name); if (seenN.has(k)) continue; seenN.add(k);
+      if (c.area && c.area !== area) { dropped.outOfArea++; continue; }
+      if (NOISE.test(c.name) || CHAIN.test(c.name)) { dropped.noise++; continue; }
+      if (offTrade && offTrade.test((c.name || "") + " " + (c.website || ""))) { dropped.wrongTrade++; continue; }
+      if (!String(c.website || "").trim()) { dropped.noWebsite++; continue; }
+      const k = nkey(c.name); if (seenN.has(k)) { dropped.duplicate++; continue; } seenN.add(k);
       clean.push(c);
     }
     clean.sort((a, b) => (a.district || "").localeCompare(b.district || "") || a.name.localeCompare(b.name));
@@ -162,7 +179,7 @@ exports.handler = async (event) => {
       while (picked.length < n) { let added = 0; for (const d of ds) { if (picked.length >= n) break; if (byD[d][round]) { picked.push(byD[d][round]); added++; } } if (!added) break; round++; }
     }
 
-    return { statusCode: 200, headers, body: JSON.stringify({ trade, area, source, sics: sics || null, bySource: perSource, osmUnavailable: (parts.find(p=>p && p.unavailable) ? true : false), gross: disc.gross, kept: clean.length, suppressed, stored, returned: picked.length, results: picked }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ trade, area, source, bySource: perSource, osmUnavailable: (parts.find(p=>p && p.unavailable) ? true : false), gross: disc.gross, kept: clean.length, dropped, suppressed, stored, returned: picked.length, results: picked }) };
   } catch (e) {
     return { statusCode: 200, headers, body: JSON.stringify({ error: e.message }) };
   }
