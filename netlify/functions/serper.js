@@ -46,6 +46,10 @@ exports.handler = async (event) => {
     // `location` geo-targets the search itself, which is what actually keeps results in the right country.
     const r = await serper(path, key, { q, gl: "uk", hl: "en",
       ...(b.location ? { location: b.location } : {}),
+      // ll pins the search to a point ("@lat,lng,14z"), which geo-targets by OUTCODE CENTROID rather than by
+      // town name. Postcode areas have no clean list of towns — CO7's parishes alone number 22 — but every
+      // outcode has a free centroid from postcodes.io, so this covers an area uniformly and cheaply.
+      ...(b.ll ? { ll: b.ll } : {}),
       ...(b.page ? { page: b.page } : {}) });
     if (!r.ok || !r.json) {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: false, status: r.status, detail: r.error || r.raw }) };
