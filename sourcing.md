@@ -13,42 +13,69 @@ Put `jude-sourced` in the `source` field of every row you ever load. This never 
 
 ---
 
-## THE TWO RULES THAT MATTER MOST
+## HOW TO SOURCE — the method
 
-### 1. Directories enumerate. Searches only sample.
+### Use the Maps connector. It is the primary source now.
 
-A web search returns about ten PAGES ranked by relevance. It is not a list of the businesses in a town, and it
-never will be — no matter how you word it. A directory page lists every one and usually states its own total.
+`POST https://postcodeprospector.netlify.app/.netlify/functions/serper`
 
-Sourcing a trade from search results alone will always come up thin. This is the single biggest cause of a weak
-list, and it is easy to miss because a search result LOOKS like an answer.
+```json
+{"q": "florist Colchester", "location": "Colchester, Essex, United Kingdom"}
+```
 
-**So for every area, enumerate first, then search:**
+It returns, per business: `name`, `website`, `phone`, `address`, `category`, `placeId`.
 
-1. **The trade body / consumer directory** named in the table below. Fetch it and PAGE THROUGH TO THE END.
-   If the page says 26 and you have 10, fetch page 2, 3, 4 until you have them all.
-2. **The local paper's "best/top rated X in <town>" article.** These republish Google's own ratings, which is
-   the business register you otherwise cannot reach. Free, fetchable, and they routinely name firms no search
-   surfaces. Search `best <trade> <town> top rated` to find them.
-3. **Then a plain web search** to catch what the directories missed.
+Three things about it that are not obvious and will cost you if you get them wrong:
 
-Yell.com and Thomson Local both return **403 Forbidden** to automated fetches — do not waste calls on them.
-Direct2Florist, the trade bodies, local town directories and the local press all work.
+1. **It uses Google's `/maps` endpoint, never `/places`.** `/places` returns no website field at all. The
+   connector already defaults correctly — just don't override `endpoint`.
+2. **Always pass `location`.** Without it, "florists in Colchester" returns Colchester, **Connecticut**.
+   Format: `"<Town>, <County>, United Kingdom"`.
+3. **A query caps out at about 20 results and Google RANKS rather than lists.** One query per area finds a
+   fraction of what is there. This is the single most important point below.
 
-Expect **three to five sources per area**. One search is a sample, not a list.
+### Expand every area into its towns, and every trade into its synonyms
 
-### 2. No website, no row.
+`CO` is not "Colchester". It is Colchester, Clacton-on-Sea, Frinton-on-Sea, Harwich, Manningtree,
+Brightlingsea, West Mersea, Halstead, Wivenhoe, Tiptree. Query each town separately, with two or three
+wordings of the trade ("florist" AND "flower shop"), then merge and de-duplicate on the website domain.
 
-The website is the field the sales team cannot work without. A firm with no website is not a usable lead.
+That is roughly 16 queries per trade per area, and it is what turns 13 Colchester florists into 44.
 
-**Never conclude that a firm has no website until you have searched its name directly.** "No website appeared
-in the directory listing" is a fact about the listing, not about the business. Elegance of Essex, Vanessa's
-Florist and several others were written off this way and every one of them had a perfectly good site — found
-in a single name search. Absence of evidence is not evidence of absence, and reporting it as fact is worse
-than leaving the row out.
+### Filter on Google's OWN category, not on the name
 
-So: collect the names first, then resolve a website for **each** name. Only after a direct name search comes
-back empty may a firm be recorded without one — and then say so plainly rather than dropping it silently.
+Every result carries Google's category label — "Florist", "Caterer", "Locksmith", "Surveyor". Keep rows whose
+category matches the trade; drop the rest. Do not try to judge from the business name.
+
+This is what removes the junk, and it is far more reliable than any keyword list. In one Colchester run it
+correctly discarded Tesco, Sainsbury's, Lidl, three garden centres, two Chinese takeaways, a tyre centre, a
+post office and a reflexologist from a florist search.
+
+**Funeral directors are NOT memorial masons.** Google labels several memorial businesses "Funeral director";
+keep the two trades strictly separate even where a firm does both.
+
+### Then filter to the postcode area
+
+Read the postcode out of the address and keep only rows whose area letters match the one you asked for. A
+Maldon florist with a CM postcode will appear in a Colchester search — it does not belong in CO.
+
+### No website, no row
+
+The website is the field the sales team cannot work without, so it is mandatory. Never conclude that a firm
+has none without searching its name directly — "no website in the listing" is a fact about the listing, not
+about the business. Several firms were written off that way and every one of them had a perfectly good site.
+
+### Where the record comes from
+
+Carry only the **website URL** across from Maps. Build the stored record by reading the firm's own site —
+name, address, phone, email, what they do. Google's terms do not permit warehousing its content, and a
+business's own published website is a cleaner source anyway.
+
+### If Maps comes up short
+
+Only then: trade-body and consumer directories (page them to the end — they state their totals), the local
+press "best <trade> in <town>" pieces, and official registers for the regulated trades in the table below.
+Yell and Thomson Local both return 403 to automated fetches — don't waste time on them.
 
 ## HOW TO WORK
 
