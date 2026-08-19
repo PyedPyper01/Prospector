@@ -52,7 +52,20 @@ exports.handler = async (event) => {
     }
 
     if (action === "delete") {
-      if (!body.source) return { statusCode: 200, headers, body: JSON.stringify({ error: "delete needs a source" }) };
+      // Delete by NAME+AREA as well as by source. Without this there was no way to remove a single row, so a
+      // firm entered under two spellings ("Dillys" and "Dillys Bespoke Florist") stayed duplicated forever —
+      // the unique constraint is on name+area, so a variant spelling is a different row by definition.
+      if (Array.isArray(body.rows) && body.rows.length) {
+        let gone = 0, failed = [];
+        for (const row of body.rows) {
+          if (!row || !row.name || !row.area) continue;
+          const u = REST + `?name=eq.${encodeURIComponent(row.name)}&area=eq.${encodeURIComponent(String(row.area).toUpperCase())}`;
+          const d = await fetch(u, { method: "DELETE", headers: { ...H, Prefer: "return=minimal" } });
+          d.ok ? gone++ : failed.push(row.name);
+        }
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: failed.length === 0, deleted: gone, failed }) };
+      }
+      if (!body.source) return { statusCode: 200, headers, body: JSON.stringify({ error: "delete needs a source, or rows[] of {name, area}" }) };
       const r = await fetch(REST + `?source=eq.${encodeURIComponent(body.source)}`, { method: "DELETE", headers: { ...H, Prefer: "return=minimal" } });
       return { statusCode: 200, headers, body: JSON.stringify({ ok: r.ok, status: r.status }) };
     }

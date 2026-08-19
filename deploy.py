@@ -61,9 +61,17 @@ def main():
     _, files = req("GET", f"/deploys/{pub['id']}/files")
     manifest = {f["path"]: f["sha"] for f in files}
 
-    # index.html
+    # index.html, plus the static docs served at the site root. sourcing.md is the sourcing instruction the
+    # team's Claude Code reads from a URL — it was previously only carried forward by its unchanged hash, so
+    # edits to it never actually reached the site.
     idx = open(os.path.join(PROJ, "index.html"), "rb").read()
     manifest["/index.html"] = sha1(idx)
+    statics = {}
+    for name in ("sourcing.md",):
+        fp = os.path.join(PROJ, name)
+        if os.path.exists(fp):
+            statics[name] = open(fp, "rb").read()
+            manifest["/" + name] = sha1(statics[name])
 
     # function zips — one bare .js per zip, exactly as Netlify expects
     zips, fn_manifest = {}, {}
@@ -95,6 +103,11 @@ def main():
         s, _ = req("PUT", f"{API}/deploys/{dep['id']}/files/index.html", idx,
                    "application/octet-stream", raw=True)
         print("  index.html →", s)
+    for name, blob in statics.items():
+        if sha1(blob) in need_files:
+            s, _ = req("PUT", f"{API}/deploys/{dep['id']}/files/{name}", blob,
+                       "application/octet-stream", raw=True)
+            print(f"  {name} → {s}")
     for name, blob in zips.items():
         if sha256(blob) in need_fns:
             s, _ = req("PUT", f"{API}/deploys/{dep['id']}/functions/{name}?runtime=js", blob,

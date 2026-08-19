@@ -13,21 +13,42 @@ Put `jude-sourced` in the `source` field of every row you ever load. This never 
 
 ---
 
-## THE ONE RULE THAT MATTERS MOST
+## THE TWO RULES THAT MATTER MOST
 
-**Directories enumerate. Searches only sample.**
+### 1. Directories enumerate. Searches only sample.
 
-A web search summary names 3–5 firms no matter how many exist. A directory page lists every one. Sourcing a
-trade from search snippets alone will always come up thin — that is the single biggest cause of a weak list.
+A web search returns about ten PAGES ranked by relevance. It is not a list of the businesses in a town, and it
+never will be — no matter how you word it. A directory page lists every one and usually states its own total.
 
-So for every trade: **go to the directory named in the table below, fetch the page, and PAGE THROUGH IT to the
-end.** Directory pages usually show 10 per page and state the true total ("26 funeral directors in and around
-Colchester"). If the page says 26 and you have 10, you are not finished — fetch page 2, 3, 4 until you have
-them all. Only use free-text web search to fill gaps the directory missed.
+Sourcing a trade from search results alone will always come up thin. This is the single biggest cause of a weak
+list, and it is easy to miss because a search result LOOKS like an answer.
 
-**Always check the stated total against what you've collected before moving to the next area.**
+**So for every area, enumerate first, then search:**
 
----
+1. **The trade body / consumer directory** named in the table below. Fetch it and PAGE THROUGH TO THE END.
+   If the page says 26 and you have 10, fetch page 2, 3, 4 until you have them all.
+2. **The local paper's "best/top rated X in <town>" article.** These republish Google's own ratings, which is
+   the business register you otherwise cannot reach. Free, fetchable, and they routinely name firms no search
+   surfaces. Search `best <trade> <town> top rated` to find them.
+3. **Then a plain web search** to catch what the directories missed.
+
+Yell.com and Thomson Local both return **403 Forbidden** to automated fetches — do not waste calls on them.
+Direct2Florist, the trade bodies, local town directories and the local press all work.
+
+Expect **three to five sources per area**. One search is a sample, not a list.
+
+### 2. No website, no row.
+
+The website is the field the sales team cannot work without. A firm with no website is not a usable lead.
+
+**Never conclude that a firm has no website until you have searched its name directly.** "No website appeared
+in the directory listing" is a fact about the listing, not about the business. Elegance of Essex, Vanessa's
+Florist and several others were written off this way and every one of them had a perfectly good site — found
+in a single name search. Absence of evidence is not evidence of absence, and reporting it as fact is worse
+than leaving the row out.
+
+So: collect the names first, then resolve a website for **each** name. Only after a direct name search comes
+back empty may a firm be recorded without one — and then say so plainly rather than dropping it silently.
 
 ## HOW TO WORK
 
@@ -66,8 +87,7 @@ generic filler in those areas.
 
 ## SOURCE TABLE — the defined parameters for every trade
 
-**Method key:** **DIR** = fetch and page the directory · **REG** = official register · **CH** = Companies House
-free advanced search by SIC · **SRCH** = per-area web search (last resort)
+**Method key:** **DIR** = fetch and page the directory · **REG** = official register · **SRCH** = per-area web search (last resort)
 
 | Trade | Primary source | Method | Expect per area |
 |---|---|---|---|
@@ -87,7 +107,7 @@ free advanced search by SIC · **SRCH** = per-area web search (last resort)
 | Order-of-service printers | BPIF members + local print firms. **Search "funeral stationery printer", not the category name** | SRCH | 4–10 |
 | Wake venues | **Search "funeral reception venue", "wake venue", "function room hire" — almost nobody markets as a "wake venue"**. Keep venues whose own site mentions funeral receptions; drop wedding-only specialists | SRCH | 8–20 |
 | Funeral transport | Hearse/limousine hire + horse-drawn specialists; often via funeral directors | SRCH | 2–5 |
-| Florists | British Florist Association members + Interflora/Direct2Florist local lists | DIR | 10–25 |
+| Florists | Direct2Florist town pages + local press "best florists in <town>" + British Florist Association. **REJECT garden centres, nurseries, pet/aquatic/reptile shops, seed and fertiliser firms** — these dominate the wrong sources | DIR | 10–25 |
 | Memorial masons & stonemasons | NAMM (namm.org.uk) + BRAMM registers + OpenStreetMap/Overpass + council "approved mason" lists | DIR | 4–12 |
 | Memorial jewellery & cremation art | Ashes-into-glass/jewellery specialists; mostly national | SRCH | 1–4 |
 | Ash scattering services | Scattering-at-sea/air specialists; mostly regional | SRCH | 1–3 |
@@ -125,8 +145,11 @@ through properly before moving on. Report any area still short so it can be fill
 ## QUALITY RULES
 
 - **Never invent a firm.** Every row must trace to a listing you actually found.
-- **ALWAYS capture the website.** Directory listings and search results carry it — record it. Aim for 90%+.
-  If a firm genuinely has none, still load it but capture the phone. **Never guess or construct a domain.**
+- **ALWAYS capture the website — it is mandatory, not a target.** Resolve one for every firm by searching its
+  name directly. **Never guess or construct a domain**, and never record "no website" without having searched.
+- **Check before you post.** Pull what is already stored for the trade+area first and skip anything held. The
+  store's key is name+area, so "Dillys" and "Dillys Bespoke Florist" are two rows — match on the DOMAIN, which
+  is reliable, not on a stripped-down name, which is not.
 - **Maximum 20 firms per postcode area.** Over that, keep the best 20: (1) accredited/registered members of
   the trade's body, (2) firms with their own website, (3) long-established, (4) the rest.
 - **Businesses only** — not employees of a firm. Sole traders under a personal name ARE valid businesses
@@ -138,6 +161,18 @@ through properly before moving on. Report any area still short so it can be fill
   independent is NOT a chain** — Hunnaball (15 branches, family-run) stays in.
 - **Free sources only. Never paid Google Places.**
 - Record accreditation or membership in `notes` — it's the sales team's quality signal.
+
+---
+
+## WHAT NOT TO USE
+
+**Companies House was removed as a source in August 2026.** Do not go back to it. It records company
+REGISTRATIONS, not premises: it holds no website field at all (of 804 firms sourced that way, 2 had a
+website), and its SIC codes bundle unrelated trades. Code 47760 is officially *"Retail sale of flowers,
+plants, seeds, fertilizers, pet animals and pet food"*, so a request for florists correctly returned reptile
+shops, aquatics centres, garden centres and fertiliser importers.
+
+**Paid Google Places is not to be used.** Free sources only, always.
 
 ---
 
