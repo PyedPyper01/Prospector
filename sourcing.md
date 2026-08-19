@@ -13,88 +13,76 @@ Put `jude-sourced` in the `source` field of every row you ever load. This never 
 
 ---
 
-## HOW TO SOURCE — the method
+## HOW TO SOURCE — one command per trade
 
-### Use the Maps connector. It is the primary source now.
+The sourcing runner does all of this for you. Do not hand-search; you will not match it.
 
-`POST https://postcodeprospector.netlify.app/.netlify/functions/serper`
+**Set up once:**
 
-```json
-{"q": "florist Colchester", "location": "Colchester, Essex, United Kingdom"}
+```bash
+git clone https://github.com/PyedPyper01/Prospector.git
+cd Prospector/sourcing
 ```
 
-It returns, per business: `name`, `website`, `phone`, `address`, `category`, `placeId`.
+**Then, per trade:**
 
-Three things about it that are not obvious and will cost you if you get them wrong:
+```bash
+MAX_OUTCODES=20 python3 national.py "Celebrants" AL B BA BB BD BH BL BN BR BS
+```
 
-1. **It uses Google's `/maps` endpoint, never `/places`.** `/places` returns no website field at all. The
-   connector already defaults correctly — just don't override `endpoint`.
-2. **Always pass `location`.** Without it, "florists in Colchester" returns Colchester, **Connecticut**.
-   Format: `"<Town>, <County>, United Kingdom"`.
-3. **A query caps out at about 20 results and Google RANKS rather than lists.** One query per area finds a
-   fraction of what is there. This is the single most important point below.
+Trade name in quotes, exactly as spelled in the list below, then the postcode areas. Work in batches of ten
+areas or so. It prints what it found per area and writes straight to the shared store as it goes, so an
+interruption costs nothing — just re-run and it skips what is already held.
 
-### Expand every area into its towns, and every trade into its synonyms
+**`MAX_OUTCODES` is your budget dial.** It is one search credit per outcode per area. 20 covers most areas
+completely; where an area has more, the run says so explicitly — `B: outcodes 1-20 of 38 (capped: 18 further
+outcodes not queried)` — and you finish it with `SKIP_OUTCODES=20 MAX_OUTCODES=20` on a second pass.
 
-`CO` is not "Colchester". It is Colchester, Clacton-on-Sea, Frinton-on-Sea, Harwich, Manningtree,
-Brightlingsea, West Mersea, Halstead, Wivenhoe, Tiptree. Query each town separately, with two or three
-wordings of the trade ("florist" AND "flower shop"), then merge and de-duplicate on the website domain.
+### What it does for you
 
-That is roughly 16 queries per trade per area, and it is what turns 13 Colchester florists into 44.
+- Searches Google Maps around **every outcode centroid** in the area, not one point. This is the whole game:
+  one query per area finds a fraction of what exists, because Maps ranks rather than lists.
+- Sends a `location` with every query. Without it the search silently falls back to the United States —
+  Liverpool's coordinates returned Brooklyn and Cambridge, Ohio on different calls.
+- Keeps only rows whose **Google category** matches the trade, using per-trade lists written from live samples.
+- Keeps only rows whose **postcode area matches** the one you asked for.
+- **Refuses any row without a website.**
+- Skips firms already stored, matching on domain.
+- Stops loudly if the search credits run out, rather than reporting empty areas.
 
-### Filter on Google's OWN category, not on the name
+### Trades the runner covers
 
-Every result carries Google's category label — "Florist", "Caterer", "Locksmith", "Surveyor". Keep rows whose
-category matches the trade; drop the rest. Do not try to judge from the business name.
+Florists · Funeral directors (full service) · Celebrants · Funeral catering & wakes · Wake venues ·
+Funeral photographers · Funeral videographers & livestream · Order-of-service printers · Funeral transport ·
+Memorial masons & stonemasons · Memorial benches, trees & plaques · Private cemeteries ·
+Natural & woodland burial grounds · Private crematoria · Probate solicitors · Conveyancing solicitors ·
+Probate accountants · Will writers & LPA drafters · RICS chartered surveyors · Estate clearance specialists ·
+House clearance, removals & storage · Auction houses · Garden maintenance (void property) ·
+Locksmiths (securing property) · Bereavement & pension IFAs · Life insurance brokers · Equity release advisers ·
+Home care agencies · Domiciliary & live-in care · Private bereavement counsellors · Kennels & catteries ·
+Pet rehoming agencies
 
-This is what removes the junk, and it is far more reliable than any keyword list. In one Colchester run it
-correctly discarded Tesco, Sainsbury's, Lidl, three garden centres, two Chinese takeaways, a tyre centre, a
-post office and a reflexologist from a florist search.
+**Florists is already done nationally — start anywhere else.**
 
-**Funeral directors are NOT memorial masons.** Google labels several memorial businesses "Funeral director";
-keep the two trades strictly separate even where a firm does both.
+### Trades the runner does NOT cover
 
-### Then filter to the postcode area
+These are national, tiny, or register-based, and a per-area Maps sweep returns noise. Source them by hand from
+the trade body or register named in the table further down:
 
-Read the postcode out of the address and keep only rows whose area letters match the one you asked for. A
-Maldon florist with a CM postcode will appear in a Colchester search — it does not belong in CO.
+Direct cremation specialists · Repatriation specialists · Embalming specialists · Custom coffin makers ·
+Memorial jewellery & cremation art · Ash scattering services · Wills storage services · Probate genealogists ·
+IHT planning & trust services · Care home placement consultants · Children's bereavement specialists ·
+Property security & insurance · Funeral musicians
 
-### No website, no row
+For those, and for filling gaps the runner leaves: enumerate first (directories state their totals; local
+press "best <trade> in <town>" pieces republish Google's ratings), then search, then resolve each name to its
+website with a direct search. Never conclude a firm has no website without searching its name — that mistake
+has cost us real firms. Yell and Thomson Local return 403 to automated fetches; don't bother.
 
-The website is the field the sales team cannot work without, so it is mandatory. Never conclude that a firm
-has none without searching its name directly — "no website in the listing" is a fact about the listing, not
-about the business. Several firms were written off that way and every one of them had a perfectly good site.
+### Do not clear anything
 
-### Where the record comes from
-
-Carry only the **website URL** across from Maps. Build the stored record by reading the firm's own site —
-name, address, phone, email, what they do. Google's terms do not permit warehousing its content, and a
-business's own published website is a cleaner source anyway.
-
-### If Maps comes up short
-
-Only then: trade-body and consumer directories (page them to the end — they state their totals), the local
-press "best <trade> in <town>" pieces, and official registers for the regulated trades in the table below.
-Yell and Thomson Local both return 403 to automated fetches — don't waste time on them.
-
-## HOW TO WORK
-
-Do **not** ask me to confirm anything. Do **not** pause between batches. Do **not** run batches in parallel or
-spawn background agents. Work sequentially and continuously, then report once at the end.
-
-**1. Check what's already stored.** POST `{"action":"get","trade":"<THE TRADE>","limit":20000}` to the endpoint.
-Skip postcode areas that already appear. This means an interruption costs nothing — re-running resumes.
-
-**2. Loop, 8 areas at a time:**
-- Work the directory for each area (paging to the end), then fill gaps by search
-- POST that batch
-- Confirm `{"ok":true,...}`; if `ok:false`, fix and resend
-- Start the next 8 immediately. **Never accumulate results to load at the end.**
-
-**3. Stop when every area below is stored.** Report totals and flag any area that came back below its expected
-yield — that's a signal the directory was missed, not that the firms don't exist.
-
----
+The store upserts on name+area and de-duplicates on domain, so re-running a trade improves the rows rather
+than duplicating them. There is never a reason to empty it first.
 
 ## THE AREAS (England & Wales)
 

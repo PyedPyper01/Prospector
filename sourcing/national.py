@@ -24,9 +24,83 @@ MAX_OUTCODES  = int(os.environ.get("MAX_OUTCODES", "10"))    # credit budget per
 SKIP_OUTCODES = int(os.environ.get("SKIP_OUTCODES", "0"))    # resume a capped area where the last run stopped
 CREDITS = {"n": 0}
 
+# trade -> (search terms, KEEP these Google categories, DROP these).
+# Every KEEP/DROP list below was written from a live sample of what Google actually returns for that search,
+# not from guesswork. Filtering on Google's own category label is far more reliable than reading the business
+# name — it is what removes supermarkets from florists and taxi firms from funeral transport.
 TRADES = {
-  "Florists": (["florist"], r"florist|flower", r"supermarket|takeaway|garden cent|department store|discount store|post office|tyre|antique|carpet|lighting|cafe|pet groom|reflex|wedding service|celebrant"),
+ "Florists": (["florist"], r"florist|flower",
+   r"supermarket|takeaway|garden cent|department store|discount store|post office|tyre|antique|carpet|lighting|cafe|pet groom|reflex|wedding service|celebrant"),
+ "Funeral directors (full service)": (["funeral director"], r"funeral director|funeral home|cremation service",
+   r"corporate office|florist|mason|monument|cemetery"),
+ "Celebrants": (["funeral celebrant", "celebrant"], r"celebrant",
+   r"funeral director|funeral home|wedding venue|photograph"),
+ "Funeral catering & wakes": (["caterer", "catering company"], r"caterer|catering|hog roast|buffet",
+   r"supermarket|takeaway|restaurant$|grocery"),
+ "Wake venues": (["function room hire"], r"events? venue|function room|community cent|pub|hotel|social club",
+   r"wedding venue|nightclub"),
+ "Funeral photographers": (["photographer"], r"photographer|photography studio|photography service|portrait studio",
+   r"aerial|drone|commercial photographer|photo lab|school photo"),
+ "Funeral videographers & livestream": (["videographer"], r"video production|videograph",
+   r"wedding photographer|aerial|dj service|photography service"),
+ "Order-of-service printers": (["printing company", "funeral stationery printer"], r"print shop|commercial printer|copy shop|digital printing|printing",
+   r"shipping and mailing|graphic design|photo lab|sign"),
+ "Funeral transport": (["limousine hire"], r"limousine|chauffeur",
+   r"taxi service|bus|coach hire|car rental"),
+ "Memorial masons & stonemasons": (["memorial mason", "stonemason"], r"mason|monument|stone|memorial|headstone|engrav",
+   r"funeral director|funeral home|worktop|kitchen|bathroom|tiling|paving|driveway|fireplace"),
+ "Memorial benches, trees & plaques": (["memorial bench"], r"monument maker|memorial$|engrav|sign",
+   r"historical landmark|park$|sculpture|memorial park|tourist attraction|cemetery"),
+ "Private cemeteries": (["cemetery"], r"^cemetery$",
+   r"military|pet cemetery|place of worship|historical landmark|park"),
+ "Natural & woodland burial grounds": (["natural burial ground", "woodland burial"], r"cemetery|burial",
+   r"military|place of worship|historical landmark"),
+ "Private crematoria": (["crematorium"], r"cremation|crematorium",
+   r"bus stop|pet funeral|pet cremation|funeral director|funeral home|cemetery"),
+ "Probate solicitors": (["probate solicitor", "wills and probate solicitor"], r"law firm|legal services|lawyer|attorney|solicitor|conveyancer",
+   r"personal injury|immigration|criminal|marketing|recruit"),
+ "Conveyancing solicitors": (["conveyancing solicitor"], r"law firm|legal services|lawyer|attorney|conveyancer|solicitor",
+   r"personal injury|immigration|criminal|marketing|recruit"),
+ "Probate accountants": (["accountant"], r"accountant|accounting firm|chartered accountant",
+   r"tax preparation service|bookkeep|payroll|marketing"),
+ "Will writers & LPA drafters": (["will writing service"], r"legal services|estate planning|lawyer|law firm|solicitor|will",
+   r"non-profit|charity|personal injury|recruit"),
+ "RICS chartered surveyors": (["chartered surveyor"], r"surveyor",
+   r"real estate agent|estate agent|structural engineer|architect"),
+ "Estate clearance specialists": (["house clearance", "probate house clearance"], r"house clearance|clearance service",
+   r"waste-?management|second-?hand furniture|charity shop|skip hire"),
+ "House clearance, removals & storage": (["removals company"], r"mover|moving and storage|removal|self-?storage",
+   r"transportation service|courier|haulage|van rental"),
+ "Auction houses": (["auction house"], r"auction",
+   r"auto auction|car auction|house clearance|real estate auctioneer"),
+ "Garden maintenance (void property)": (["garden maintenance"], r"gardener|landscap|lawn care|arborist|tree surgeon",
+   r"pressure washing|garden cent|nursery|florist"),
+ "Locksmiths (securing property)": (["locksmith"], r"locksmith|lock",
+   r"auto ?locksmith|car key|cell phone|do-it-yourself|hardware|shoe repair"),
+ "Bereavement & pension IFAs": (["independent financial adviser"], r"financial planner|financial consultant|financial advisor|financial adviser|investment service|wealth",
+   r"marketing agency|financial institution|bank|^consultant$|insurance agency|mortgage lender"),
+ "Life insurance brokers": (["insurance broker"], r"insurance broker|insurance agency",
+   r"mortgage broker|insurance company|car insurance|bank"),
+ "Equity release advisers": (["equity release adviser"], r"mortgage broker|financial consultant|financial planner|financial advisor",
+   r"mortgage lender|financial institution|business to business|bank|estate agent"),
+ "Home care agencies": (["home care agency"], r"home health care|home care|nursing agency|care agency",
+   r"nursing home|retirement home|hospital|pharmacy"),
+ "Domiciliary & live-in care": (["domiciliary care", "live-in care"], r"home health care|home care|nursing agency|care agency",
+   r"nursing home|retirement home|hospital|pharmacy"),
+ "Private bereavement counsellors": (["bereavement counsellor", "grief counselling"], r"counselor|counsellor|psychotherapist|mental health",
+   r"non-?profit|charity|hospital|nhs|life coach|hypno"),
+ "Kennels & catteries": (["boarding kennels", "cattery"], r"pet boarding|kennel|cattery|dog day care",
+   r"pet sitter|veterinar|pet shop|groom"),
+ "Pet rehoming agencies": (["animal rescue centre"], r"animal rescue|animal shelter|pet adoption",
+   r"thrift store|charity shop|veterinar|pharmacy|pet shop"),
 }
+
+# NOT Maps trades — these are national, tiny, or register-based, and a per-area Maps sweep produces noise.
+# Source them from the trade body or register named in the table in sourcing.md instead:
+#   Direct cremation specialists · Repatriation specialists · Embalming specialists · Custom coffin makers
+#   Memorial jewellery & cremation art · Ash scattering services · Wills storage services
+#   Probate genealogists · IHT planning & trust services · Care home placement consultants
+#   Children's bereavement specialists · Property security & insurance · Funeral musicians
 
 def jget(url, tries=2):
     for _ in range(tries):
