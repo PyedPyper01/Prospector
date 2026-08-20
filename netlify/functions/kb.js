@@ -44,6 +44,23 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, upserted: rows.length }) };
     }
 
+    if (action === "patch") {
+      // Update ONLY the fields supplied, matched on name+area. `upsert` maps every column and writes null for
+      // anything absent, so using it to add an email would silently blank the website and phone on that row.
+      // PostgREST PATCH touches only the keys sent, which is what enrichment needs.
+      const rows = Array.isArray(body.rows) ? body.rows : [];
+      let done = 0; const failed = [];
+      for (const r of rows) {
+        if (!r || !r.name || !r.area) continue;
+        const { name, area, ...fields } = r;
+        if (!Object.keys(fields).length) continue;
+        const u = REST + `?name=eq.${encodeURIComponent(name)}&area=eq.${encodeURIComponent(String(area).toUpperCase())}`;
+        const p = await fetch(u, { method: "PATCH", headers: { ...H, Prefer: "return=minimal" }, body: JSON.stringify(fields) });
+        p.ok ? done++ : failed.push(name);
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: failed.length === 0, patched: done, failed: failed.slice(0, 10) }) };
+    }
+
     if (action === "check") {
       const r = await fetch(REST + `?select=name,area,website,status${q("trade", body.trade)}${q("area", (body.area || "").toUpperCase())}&limit=20000`, { headers: H });
       if (!r.ok) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, status: r.status, detail: (await r.text()).slice(0, 300) }) };
