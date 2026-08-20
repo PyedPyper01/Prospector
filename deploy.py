@@ -67,7 +67,7 @@ def main():
     idx = open(os.path.join(PROJ, "index.html"), "rb").read()
     manifest["/index.html"] = sha1(idx)
     statics = {}
-    for name in ("sourcing.md",):
+    for name in ("sourcing.md", "trades.json"):
         fp = os.path.join(PROJ, name)
         if os.path.exists(fp):
             statics[name] = open(fp, "rb").read()

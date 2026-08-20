@@ -205,6 +205,21 @@ td a:hover{text-decoration:underline}
       <label style="margin-top:10px">Your exclusions <span class="muted">(optional — or write them in your request: "omit …", "exclude …")</span></label>
       <textarea id="blocklist"></textarea>
     </div>
+    <div class="card" style="border-color:#2f9e6f">
+      <h3>1 · Find suppliers <span class="muted">(Google Maps — the main way to source)</span></h3>
+      <p style="font-size:12.5px;color:var(--dim);line-height:1.5;margin:-2px 0 10px">Searches every postcode district in the area, keeps only firms Google itself classes as this trade, drops anything outside the area, and <b>refuses any firm without a website</b>. Results go straight into the shared database.</p>
+      <label>Supplier type</label>
+      <select id="mapsTrade"></select>
+      <label style="margin-top:8px">Areas <span class="muted">(e.g. <b>CO</b> or <b>CO, CM, IP</b>)</span></label>
+      <input type="text" id="mapsAreas" placeholder="CO, CM" style="text-transform:uppercase">
+      <div class="row" style="gap:8px">
+        <div><label>Districts per area <span class="muted">(1 search each)</span></label><input type="number" id="mapsMax" value="20" min="1" max="40"></div>
+      </div>
+      <button class="primary" id="mapsRunBtn" onclick="runMapsSweep()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">▶ Search &amp; save to database</button>
+      <button class="ghost small" onclick="MAPS.stop=true" style="width:100%;margin-top:6px">⏹ Stop</button>
+      <div id="mapsStatus" class="muted" style="font-size:12px;margin-top:8px">Pick a trade and one or more postcode areas, then press Search.</div>
+      <button class="primary" id="mapsGridBtn" onclick="loadMapsIntoGrid()" disabled style="width:100%;margin-top:6px">→ Also load these into the grid</button>
+    </div>
     <div class="card">
       <h3>1 · Find suppliers <span class="muted">(pick a trade + areas — Prospector picks the source automatically)</span></h3>
       <label>Supplier type <span class="muted">(the marketplace's own categories — picking from the list keeps every run under the same name)</span></label>
@@ -1015,6 +1030,129 @@ async function districtResults(term,d,town,townMode){
   }
   return {rows};
 }
+
+/* ---------- GOOGLE MAPS SWEEP — the primary sourcing route ----------
+   Runs from the browser so it is not bound by a function's execution limit: one Serper call per postcode
+   DISTRICT, because Maps ranks rather than lists and a single query per area finds only a fraction of what
+   is there (Colchester: 13 florists one way, 44 this way).
+   Three gates before anything is stored — Google's own category must match the trade, the postcode area must
+   match the one asked for, and there must be a website. */
+let MAPS = { rows: [], stop: false, cfg: null };
+
+async function mapsConfig(){
+  if(MAPS.cfg) return MAPS.cfg;
+  const r = await fetch('/trades.json'); MAPS.cfg = await r.json(); return MAPS.cfg;
+}
+function fillMapsTrade(){
+  const sel = $('mapsTrade'); if(!sel || sel.options.length) return;
+  mapsConfig().then(cfg=>{
+    const names = Object.keys(cfg).sort();
+    sel.innerHTML = '<option value="">— choose a supplier type —</option>' +
+      names.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+    const last = localStorage.getItem('pp_MapsTrade'); if(last) sel.value = last;
+    sel.onchange = ()=>localStorage.setItem('pp_MapsTrade', sel.value);
+  });
+}
+
+// Every postcode district in an area. postcodes.io has no prefix search, so probe AREA1..AREA40 — and the
+// letter-suffixed forms too, because central London has EC1A/WC1A and no plain EC1 exists.
+async function outcodesFor(area){
+  const tryOne = async code => {
+    try{ const r = await fetch('https://api.postcodes.io/outcodes/'+code);
+         if(!r.ok) return null; const d = await r.json(); const x = d.result;
+         return (x && x.latitude!=null) ? {oc:x.outcode, lat:x.latitude, lon:x.longitude,
+                 loc:((x.admin_district||[])[0]||area)+', '+((x.country||['England'])[0])+', United Kingdom'} : null;
+    }catch(e){ return null; }
+  };
+  // Probe all forty districts CONCURRENTLY. Done one at a time this is up to 560 sequential lookups per area
+  // — around two minutes before a single search runs. postcodes.io is free and fast; fan out instead.
+  const groups = await Promise.all(Array.from({length:40}, async (_,i)=>{
+    const n = i+1;
+    const hit = await tryOne(area+n);
+    if(hit) return [hit];
+    const subs = await Promise.all(Array.from('ABCDEHMNPRVXY', L=>tryOne(area+n+L)));
+    return subs.filter(Boolean);
+  }));
+  return groups.flat().sort((a,b)=>a.oc.localeCompare(b.oc,undefined,{numeric:true}));
+}
+
+async function runMapsSweep(){
+  const trade = $('mapsTrade').value.trim();
+  const areas = ($('mapsAreas').value||'').toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+  const maxOc = Math.max(1, Math.min(40, +$('mapsMax').value || 20));
+  const st = $('mapsStatus');
+  if(!trade){ st.textContent='Pick a supplier type first.'; return; }
+  if(!areas.length){ st.textContent='Enter at least one postcode area, e.g. CO'; return; }
+  const cfg = (await mapsConfig())[trade];
+  if(!cfg){ st.textContent = `"${trade}" is sourced from a trade directory, not Google Maps — see the sourcing instruction.`; return; }
+
+  const keep = new RegExp(cfg.keep,'i'), drop = new RegExp(cfg.drop,'i');
+  const PC = /\b([A-Z]{1,2})\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/i;
+  MAPS.rows = []; MAPS.stop = false;
+  $('mapsRunBtn').disabled = true;
+  let searches = 0;
+
+  for(const area of areas){
+    if(MAPS.stop) break;
+    st.textContent = `${area}: finding postcode districts…`;
+    const ocs = (await outcodesFor(area)).slice(0, maxOc);
+    if(!ocs.length){ log(`${area}: no postcode districts resolved — skipped`,'wn'); continue; }
+    const seen = new Set(); let kept = 0;
+    for(let i=0;i<ocs.length;i++){
+      if(MAPS.stop) break;
+      const o = ocs[i];
+      st.textContent = `${area}: district ${i+1}/${ocs.length} (${o.oc}) · ${MAPS.rows.length} found so far`;
+      for(const term of cfg.terms){
+        searches++;
+        let d = null;
+        try{
+          const r = await fetch('/.netlify/functions/serper',{method:'POST',headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({q:term, ll:`@${o.lat.toFixed(4)},${o.lon.toFixed(4)},13z`, location:o.loc})});
+          d = await r.json();
+        }catch(e){ log(`${area} ${o.oc}: ${e.message}`,'er'); continue; }
+        if(!d || !d.ok){ log(`Search refused — ${(d&&(d.detail||d.error))||'unknown'}. Stopping.`,'er'); MAPS.stop=true; break; }
+        for(const p of (d.results||[])){
+          const site=(p.website||'').trim(); if(!site) continue;
+          const dom = site.replace(/^https?:\/\/(www\.)?/,'').split('/')[0].toLowerCase();
+          if(seen.has(dom)) continue;
+          const cat = p.category||'';
+          if(!keep.test(cat) || drop.test(cat)) continue;
+          const m = PC.exec(p.address||'');
+          if(!m || m[1].toUpperCase()!==area) continue;
+          seen.add(dom); kept++;
+          MAPS.rows.push({name:p.name, trade, area, website:site, phone:p.phone||'',
+                          postcode:(m[0]||'').toUpperCase(), address:(p.address||'').replace(/, United Kingdom$/,''),
+                          notes:'Google category: '+cat});
+        }
+      }
+    }
+    log(`${area}: ${kept} on-trade with a website, from ${ocs.length} district(s)`,'ok');
+  }
+
+  $('mapsRunBtn').disabled = false;
+  if(!MAPS.rows.length){ st.textContent = `Nothing found. ${searches} search(es) used.`; $('mapsGridBtn').disabled=true; return; }
+  st.textContent = `Saving ${MAPS.rows.length} firms to the database…`;
+  try{
+    let saved = 0;
+    for(let i=0;i<MAPS.rows.length;i+=100){
+      const chunk = MAPS.rows.slice(i,i+100).map(r=>({...r, source:'pp-maps', status:'new'}));
+      const r = await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'upsert', rows:chunk})});
+      const d = await r.json(); if(d && d.ok) saved += chunk.length;
+    }
+    st.innerHTML = `<b>${MAPS.rows.length} firms found, ${saved} saved</b> · ${searches} search(es) used. They are in the database now — or load them into the grid below.`;
+    $('mapsGridBtn').disabled = false;
+  }catch(e){ st.textContent = 'Found '+MAPS.rows.length+' but saving failed: '+e.message; }
+}
+
+function loadMapsIntoGrid(){
+  if(!MAPS.rows.length) return;
+  const H=['NAME','CATEGORY','POSTCODE_AREA','DISTRICT','TOWN','WEBSITE','PHONE','ADDRESS','NOTES','SOURCE'];
+  const e=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const csv=[H.join(',')].concat(MAPS.rows.map(r=>[r.name,r.trade,r.area,(r.postcode||'').split(' ')[0],'',r.website,r.phone,r.address,r.notes,'pp-maps'].map(e).join(','))).join('\n');
+  loadManualSupply(csv);
+}
+
 /* ---------- BATCH QUEUE: run a matrix of areas × categories unattended (resume · master CSV · webhook) ---------- */
 function allEWAreas(){const m=parseCounties();const s=new Set();Object.values(m).forEach(a=>a.forEach(x=>s.add((x||'').toUpperCase())));return [...s];}
 let BATCH={running:false,stop:false,master:[],done:(()=>{try{return JSON.parse(localStorage.getItem('pp_batch_done')||'[]');}catch(e){return[];}})(),jobs:[]};
@@ -2700,6 +2838,7 @@ function fillTradeSelect(id,placeholder,memoryKey){
   sel.addEventListener('change',()=>{try{localStorage.setItem(memoryKey,sel.value);}catch(e){}});
 }
 function initSweepTradePicker(){
+  fillMapsTrade();
   fillTradeSelect('sweepTrade','— choose a supplier type —','pp_SweepTrade');
   fillTradeSelect('dbTrade','— choose a trade to load —','pp_DbTrade');
 }
