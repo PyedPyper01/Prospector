@@ -97,6 +97,20 @@ def main():
         sys.exit("deploy create failed: " + json.dumps(dep)[:300])
     need_files = set(dep.get("required") or [])
     need_fns = set(dep.get("required_functions") or [])
+
+    # Netlify garbage-collects function bundles. When that has happened it asks for every zip back — but in
+    # --html mode we never built any, so the deploy hangs and then dies on a connection reset with nothing
+    # explaining why. Rebuild the zips and carry on rather than failing.
+    if html_only and need_fns:
+        print(f"  bundles expired — Netlify wants {len(need_fns)} function(s) back; rebuilding them")
+        fdir = os.path.join(PROJ, "netlify", "functions")
+        for fn in sorted(os.listdir(fdir)):
+            if not fn.endswith(".js"):
+                continue
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+                z.write(os.path.join(fdir, fn), arcname=fn)
+            zips[fn[:-3]] = buf.getvalue()
     print(f"deploy {dep['id']} · required files {len(need_files)} · required functions {len(need_fns)}")
 
     if manifest["/index.html"] in need_files:

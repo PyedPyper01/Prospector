@@ -135,7 +135,7 @@ td a:hover{text-decoration:underline}
 <main>
   <aside class="side">
     <div class="card" style="border-color:var(--acc2)">
-      <h3>Import a saved CSV <span class="muted">(optional — only if you already have a list; otherwise start at step 1 below)</span></h3>
+      <h3>Optional · Import a saved CSV <span class="muted">(only if you already have a list — otherwise start at step 1)</span></h3>
       <label>Load a <b>CSV</b> <span class="muted">— firms you've sourced (e.g. an Unbiased/CQC scrape, hand-picked suppliers, or a MASTER sweep export). Enters the grid for you to review, tick and publish.</span></label>
       <input type="file" id="manualSupplyFile" onchange="(function(f){if(!f)return;var r=new FileReader();r.onload=function(){loadManualSupply(r.result);};r.readAsText(f);})(this.files[0])">
       <label class="chk" style="margin-top:6px"><input type="checkbox" id="evalImport" checked> <b>Evaluate on import</b> — don't trust the file: Prospector runs its OWN checks (classify the trade · flag/exclude chains · Vet &amp; Rank for independence &amp; quality) and keeps EVERY row + every column for you to review. Untick = load as pre-verified (skip checks).</label>
@@ -143,7 +143,7 @@ td a:hover{text-decoration:underline}
       <button class="ghost small" style="width:100%;margin-top:6px" onclick="clearManualSupply()">✕ Clear import</button>
     </div>
     <div class="card" style="border-color:var(--acc2)">
-      <h3>Load from database <span class="muted">(firms already stored in Prospector — sourced by you, a co-worker, or a background sweep)</span></h3>
+      <h3>Optional · Load from the database <span class="muted">(firms already stored — sourced by you, a co-worker, or a background run)</span></h3>
       <label>Trade <span class="muted">(pick one — the whole database is too big to load in a single go)</span></label>
       <select id="dbTrade"></select>
       <label>Area <span class="muted">(optional — one area e.g. <b>CO</b>, or blank for all areas)</span></label>
@@ -157,7 +157,7 @@ td a:hover{text-decoration:underline}
       <div id="dbSaveStatus" class="muted" style="font-size:12px;margin-top:6px">Writes every firm currently in the grid to the shared database, so the whole team sees them. Uses the <b>Trade</b> box above as the category. Safe to re-run — it updates rather than duplicating.</div>
     </div>
     <div class="card" style="display:none">
-      <h3>2 · Postcode Area Search <span class="muted">(discover live from Google / free sources)</span></h3>
+      <h3>Older route · Single-area search <span class="muted">(OpenStreetMap — superseded by step 1, kept for spot checks)</span></h3>
       <label>Postcode area <span class="muted">(one area e.g. CO — or several e.g. <b>CO, CM, SS</b> to sweep them all)</span></label>
       <input type="text" id="area" placeholder="CO   or   CO, CM, SS, IG, RM" style="text-transform:uppercase" oninput="suggestDistricts()">
       <label>Your request <span class="muted">(type what you want, your words — run as: <i>request + district</i>)</span></label>
@@ -187,7 +187,7 @@ td a:hover{text-decoration:underline}
       </div>
     </div>
     <div class="card" style="display:none">
-      <h3>2 · Rules <span class="muted">(apply to import &amp; vet)</span></h3>
+      <h3>2 · Rules <span class="muted">(applied when vetting)</span></h3>
       <label class="chk"><input type="checkbox" id="ruleChains" checked> Omit chains &amp; groups (blocklist + ownership check)</label>
       <label class="chk"><input type="checkbox" id="ruleOpen" checked> Operational businesses only</label>
       <label class="chk"><input type="checkbox" id="ruleArea" checked> Strict area match (drop results outside the searched area)</label>
@@ -206,7 +206,7 @@ td a:hover{text-decoration:underline}
       <textarea id="blocklist"></textarea>
     </div>
     <div class="card" style="border-color:#2f9e6f">
-      <h3>1 · Find suppliers <span class="muted">(Google Maps — the main way to source)</span></h3>
+      <h3>1 · Find suppliers <span class="muted">(Google Maps — start here)</span></h3>
       <p style="font-size:12.5px;color:var(--dim);line-height:1.5;margin:-2px 0 10px">Searches every postcode district in the area, keeps only firms Google itself classes as this trade, drops anything outside the area, and <b>refuses any firm without a website</b>. Results go straight into the shared database.</p>
       <label>Supplier type</label>
       <select id="mapsTrade"></select>
@@ -221,7 +221,7 @@ td a:hover{text-decoration:underline}
       <button class="primary" id="mapsGridBtn" onclick="loadMapsIntoGrid()" disabled style="width:100%;margin-top:6px">→ Also load these into the grid</button>
     </div>
     <div class="card">
-      <h3>1 · Find suppliers <span class="muted">(pick a trade + areas — Prospector picks the source automatically)</span></h3>
+      <h3>Older route · Free-source sweep <span class="muted">(OpenStreetMap — superseded by step 1)</span></h3>
       <label>Supplier type <span class="muted">(the marketplace's own categories — picking from the list keeps every run under the same name)</span></label>
       <select id="sweepTrade"></select>
       <div class="row" style="gap:8px">
@@ -233,14 +233,14 @@ td a:hover{text-decoration:underline}
       <label class="chk"><input type="checkbox" id="sweepSkipTaken" checked> Skip firms already captured for this trade <span class="muted">(so re-runs return the NEXT batch)</span></label>
       <button class="primary" id="sweepRunBtn" onclick="runNationalSweep()" style="width:100%;margin-top:8px">▶ Run sweep</button>
       <button class="ghost small" id="sweepStopBtn" onclick="SWEEP.stop=true" style="width:100%;margin-top:6px">⏹ Stop</button>
-      <div id="sweepStatus" class="muted" style="font-size:12px;margin-top:8px">Type a supplier type + areas and press Run. Prospector auto-sources it — <b>Companies House</b> (free) for registered trades; for sole-trader trades (celebrants, florists, locksmiths) it uses <b>Google</b>, which returns them <i>with their website</i>. The status shows which it picked.</div>
+      <div id="sweepStatus" class="muted" style="font-size:12px;margin-top:8px">Older free-source route (OpenStreetMap only — Companies House was removed as a source). Step 1 above finds far more and always with a website; use this only to cross-check what Maps may have missed.</div>
       <button class="ghost small" id="sweepDlBtn" onclick="downloadSweep('main')" disabled style="width:100%;margin-top:6px">⬇ Download capture CSV <span class="muted">(≤N per area — import-ready)</span></button>
       <button class="ghost small" id="sweepDlResBtn" onclick="downloadSweep('reserve')" disabled style="width:100%;margin-top:6px">⬇ Download reserve CSV <span class="muted">(the overflow)</span></button>
       <button class="primary" id="sweepLoadBtn" onclick="loadSweepIntoGrid()" disabled style="width:100%;margin-top:6px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">→ Load captured into the grid <span class="muted">(then ✦ Enrich → ⚖ Vet &amp; Rank → publish)</span></button>
       <button class="ghost small" onclick="clearSweepTaken()" style="width:100%;margin-top:6px">↺ Clear "already captured" for this trade</button>
     </div>
     <div class="card" style="border-color:var(--acc2)">
-      <h3>2 · Vet &amp; publish</h3>
+      <h3>3 · Vet &amp; publish</h3>
       <p style="font-size:12.5px;color:var(--dim);line-height:1.5;margin:-2px 0 10px">Claude checks independence (blocklist · Companies House PSC · site small-print), scores bereavement fit &amp; quality, ranks and writes the marketplace copy. Then enrich the keepers for contacts, and publish the ones you tick.</p>
       <button class="primary" id="vetBtn" onclick="vetRank()" disabled style="width:100%;background:linear-gradient(135deg,var(--info),#2b7fc4)">⚖ Vet &amp; Rank surviving leads</button>
       <button class="primary" id="findFreeBtn" onclick="findWebsitesFree()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">🔎 Find websites FREE <span class="muted">(£0 — runs from your browser, guesses each site &amp; checks it's live. Do this first.)</span></button>
