@@ -210,8 +210,8 @@ td a:hover{text-decoration:underline}
       <p style="font-size:12.5px;color:var(--dim);line-height:1.5;margin:-2px 0 10px">Searches every postcode district in the area, keeps only firms Google itself classes as this trade, drops anything outside the area, and <b>refuses any firm without a website</b>. Results go straight into the shared database.</p>
       <label>Supplier type</label>
       <select id="mapsTrade"></select>
-      <label style="margin-top:8px">Areas <span class="muted">(e.g. <b>CO</b> or <b>CO, CM, IP</b>)</span></label>
-      <input type="text" id="mapsAreas" placeholder="CO, CM" style="text-transform:uppercase">
+      <label style="margin-top:8px">Areas <span class="muted">(e.g. <b>CO</b> or <b>CO, CM, IP</b> — <b>leave blank for all 105</b>)</span></label>
+      <input type="text" id="mapsAreas" placeholder="blank = every E&amp;W postcode area" style="text-transform:uppercase">
       <div class="row" style="gap:8px">
         <div><label>Districts per area <span class="muted">(1 search each)</span></label><input type="number" id="mapsMax" value="20" min="1" max="40"></div>
       </div>
@@ -1037,6 +1037,9 @@ async function districtResults(term,d,town,townMode){
    is there (Colchester: 13 florists one way, 44 this way).
    Three gates before anything is stored — Google's own category must match the trade, the postcode area must
    match the one asked for, and there must be a website. */
+const ALL_AREAS = ('AL B BA BB BD BH BL BN BR BS CA CB CF CH CM CO CR CT CV CW DA DE DH DL DN DT DY E EC EN EX FY GL GU HA '
+  +'HD HG HP HR HU IG IP KT L LA LD LE LL LN LS LU M ME MK N NE NG NN NP NR NW OL OX PE PL PO PR RG RH RM S '
+  +'SA SE SG SK SL SM SN SO SP SR SS ST SW SY TA TF TN TQ TR TS TW UB W WA WC WD WF WN WR WS WV YO').split(' ');
 let MAPS = { rows: [], stop: false, cfg: null };
 
 async function mapsConfig(){
@@ -1078,11 +1081,19 @@ async function outcodesFor(area){
 
 async function runMapsSweep(){
   const trade = $('mapsTrade').value.trim();
-  const areas = ($('mapsAreas').value||'').toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+  let areas = ($('mapsAreas').value||'').toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+  const wholeCountry = !areas.length;
+  if(wholeCountry) areas = ALL_AREAS.slice();
   const maxOc = Math.max(1, Math.min(40, +$('mapsMax').value || 20));
   const st = $('mapsStatus');
   if(!trade){ st.textContent='Pick a supplier type first.'; return; }
   if(!areas.length){ st.textContent='Enter at least one postcode area, e.g. CO'; return; }
+  if(wholeCountry){
+    const est = areas.length * maxOc * 1;
+    if(!confirm(`Search ALL ${areas.length} postcode areas for “${trade}”?\n\n`+
+      `About ${est.toLocaleString()} searches, roughly ${Math.round(est/60)} minutes.\n\n`+
+      `Leave this tab OPEN until it finishes — it saves after every area, so stopping early keeps everything found so far.`)) return;
+  }
   const cfg = (await mapsConfig())[trade];
   if(!cfg){ st.textContent = `"${trade}" is sourced from a trade directory, not Google Maps — see the sourcing instruction.`; return; }
 
@@ -1090,18 +1101,19 @@ async function runMapsSweep(){
   const PC = /\b([A-Z]{1,2})\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/i;
   MAPS.rows = []; MAPS.stop = false;
   $('mapsRunBtn').disabled = true;
-  let searches = 0;
+  let searches = 0, savedUpTo = 0, areaNo = 0;
 
   for(const area of areas){
     if(MAPS.stop) break;
-    st.textContent = `${area}: finding postcode districts…`;
+    areaNo++;
+    st.textContent = `${area} (${areaNo}/${areas.length}): finding postcode districts…`;
     const ocs = (await outcodesFor(area)).slice(0, maxOc);
     if(!ocs.length){ log(`${area}: no postcode districts resolved — skipped`,'wn'); continue; }
     const seen = new Set(); let kept = 0;
     for(let i=0;i<ocs.length;i++){
       if(MAPS.stop) break;
       const o = ocs[i];
-      st.textContent = `${area}: district ${i+1}/${ocs.length} (${o.oc}) · ${MAPS.rows.length} found so far`;
+      st.textContent = `${area} (${areaNo}/${areas.length}): district ${i+1}/${ocs.length} (${o.oc}) · ${MAPS.rows.length} found · ${searches} searches`;
       for(const term of cfg.terms){
         searches++;
         let d = null;
@@ -1126,23 +1138,27 @@ async function runMapsSweep(){
         }
       }
     }
-    log(`${area}: ${kept} on-trade with a website, from ${ocs.length} district(s)`,'ok');
+    // Save this area's rows immediately. Holding everything to the end means closing the tab loses the lot.
+    const fresh = MAPS.rows.slice(savedUpTo);
+    if(fresh.length){
+      try{
+        for(let i=0;i<fresh.length;i+=100){
+          const chunk = fresh.slice(i,i+100).map(r=>({...r, source:'pp-maps', status:'new'}));
+          await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({action:'upsert', rows:chunk})});
+        }
+        savedUpTo = MAPS.rows.length;
+      }catch(e){ log(`${area}: found ${fresh.length} but saving failed — ${e.message}`,'er'); }
+    }
+    log(`${area}: ${kept} on-trade with a website, from ${ocs.length} district(s) · ${MAPS.rows.length} total`,'ok');
   }
 
   $('mapsRunBtn').disabled = false;
   if(!MAPS.rows.length){ st.textContent = `Nothing found. ${searches} search(es) used.`; $('mapsGridBtn').disabled=true; return; }
-  st.textContent = `Saving ${MAPS.rows.length} firms to the database…`;
-  try{
-    let saved = 0;
-    for(let i=0;i<MAPS.rows.length;i+=100){
-      const chunk = MAPS.rows.slice(i,i+100).map(r=>({...r, source:'pp-maps', status:'new'}));
-      const r = await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({action:'upsert', rows:chunk})});
-      const d = await r.json(); if(d && d.ok) saved += chunk.length;
-    }
-    st.innerHTML = `<b>${MAPS.rows.length} firms found, ${saved} saved</b> · ${searches} search(es) used. They are in the database now — or load them into the grid below.`;
-    $('mapsGridBtn').disabled = false;
-  }catch(e){ st.textContent = 'Found '+MAPS.rows.length+' but saving failed: '+e.message; }
+  st.innerHTML = `<b>${MAPS.rows.length} firms found and saved</b> across ${areaNo} area(s) · ${searches} search(es) used.`+
+    (MAPS.stop?' <b>Stopped early</b> — everything found so far is saved.':'')+
+    ' They are in the database now — or load them into the grid below.';
+  $('mapsGridBtn').disabled = false;
 }
 
 function loadMapsIntoGrid(){
