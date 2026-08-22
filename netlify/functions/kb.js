@@ -82,7 +82,13 @@ exports.handler = async (event) => {
         }
         return { statusCode: 200, headers, body: JSON.stringify({ ok: failed.length === 0, deleted: gone, failed }) };
       }
-      if (!body.source) return { statusCode: 200, headers, body: JSON.stringify({ error: "delete needs a source, or rows[] of {name, area}" }) };
+      // Delete a whole trade in one statement. Doing it row by row means one HTTP round trip each, which
+      // blows the function's execution budget long before a thousand rows are gone.
+      if (body.trade) {
+        const r = await fetch(REST + `?trade=eq.${encodeURIComponent(body.trade)}`, { method: "DELETE", headers: { ...H, Prefer: "return=minimal" } });
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: r.ok, status: r.status, deletedTrade: body.trade }) };
+      }
+      if (!body.source) return { statusCode: 200, headers, body: JSON.stringify({ error: "delete needs a source, a trade, or rows[] of {name, area}" }) };
       const r = await fetch(REST + `?source=eq.${encodeURIComponent(body.source)}`, { method: "DELETE", headers: { ...H, Prefer: "return=minimal" } });
       return { statusCode: 200, headers, body: JSON.stringify({ ok: r.ok, status: r.status }) };
     }

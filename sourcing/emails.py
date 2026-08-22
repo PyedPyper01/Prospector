@@ -19,6 +19,36 @@ KB = "https://postcodeprospector.netlify.app/.netlify/functions/kb"
 PAGES = ["", "/contact", "/contact-us", "/about", "/about-us", "/contact.html"]
 EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
+# UK numbers, in the shapes businesses actually publish them. Anchored on the leading 0 and the real UK
+# groupings so it does not swallow company numbers, VAT numbers, dates or prices.
+PHONE = re.compile(r"""(?x)
+    (?:\+44\s?|0)
+    (?:
+        2\d\s?\d{4}\s?\d{4}          # 020 7946 0000
+      | 1\d{3}\s?\d{5,6}              # 01206 573222
+      | 1\d{2}\s?\d{3}\s?\d{4}        # 0161 832 7731
+      | 7\d{3}\s?\d{6}                # 07700 900000
+      | 800\s?\d{6}|808\s?\d{7}|845\s?\d{6}|3\d{2}\s?\d{3}\s?\d{4}
+    )""")
+PHONE_JUNK = re.compile(r"(0800\s?11\s?11|999|101|123456|000000|1234567)")
+
+def clean_phone(raw):
+    """Validate, but do NOT re-space. UK area codes run from two to five digits, so imposing a grouping turns
+    01344 851250 into 013 4485 1250 and 0161 768 7722 into 01617 687722. The business already formats its own
+    number correctly on its website, so keep what it published and only normalise the +44 prefix."""
+    digits = re.sub(r"[^\d+]", "", raw or "")
+    # "+44 (0)1727 860207" is a very common published form; the bracketed zero survives the strip and would
+    # otherwise leave a double leading zero that fails validation.
+    if digits.startswith("+44"):
+        digits = digits[3:]
+        digits = "0" + (digits[1:] if digits.startswith("0") else digits)
+    if not digits.startswith("0") or not (10 <= len(digits) <= 11): return None
+    if PHONE_JUNK.search(digits): return None
+    shown = re.sub(r"\s+", " ", str(raw).strip())
+    shown = re.sub(r"^\+44\s*\(?\s*0?\s*\)?\s*", "0", shown)
+    # keep the published form when it is the same number, otherwise fall back to bare digits
+    return shown if re.sub(r"[^\d]", "", shown) == digits else digits
+
 # Addresses that belong to the website's plumbing, not the business.
 JUNK = re.compile(r"(sentry|wix|squarespace|godaddy|shopify|cloudflare|example|yourdomain|domain\.com"
                   r"|sample|test@|no-?reply|do-?not-?reply|@2x|\.png|\.jpg|\.gif|\.webp|\.svg"
@@ -68,42 +98,57 @@ def pick(cands, dom):
         if pool: return pool[0]
     return None          # on somebody else's company domain — that is their web designer, not the firm
 
-def find_email(row):
+def find_contacts(row):
+    """One pass, both fields. The pages are already being fetched for the email, so the phone is free."""
     site = (row.get("website") or "").strip().rstrip("/")
-    if not site: return None
+    if not site: return (None, None)
     dom = domain(site)
+    want_email = not (row.get("email") or "").strip()
+    want_phone = not (row.get("phone") or "").strip()
+    email = phone = None
     for path in PAGES:
+        if (email or not want_email) and (phone or not want_phone): break
         html = fetch(site + path)
         if not html: continue
-        hits = EMAIL.findall(html) + [m for m in re.findall(r"mailto:([^\"'?>\s]+)", html, re.I)]
-        got = pick(hits, dom)
-        if got: return got
-    return None
+        if want_email and not email:
+            hits = EMAIL.findall(html) + [m for m in re.findall(r"mailto:([^\"'?>\s]+)", html, re.I)]
+            email = pick(hits, dom)
+        if want_phone and not phone:
+            tel = [t for t in re.findall(r"tel:([+0-9()\s\-]{9,20})", html, re.I)]
+            cands = [clean_phone(t) for t in tel] + [clean_phone(m.group(0)) for m in PHONE.finditer(html)]
+            phone = next((c for c in cands if c), None)
+    return (email, phone)
 
 def run(trade, areas):
     rows, off = [], 0
     while True:
-        d = kb({"action": "get", "trade": trade, "limit": 1000, "offset": off})
+        q = {"action": "get", "limit": 1000, "offset": off}
+        if trade: q["trade"] = trade
+        d = kb(q)
         got = d.get("results") or []
         rows += got
         if len(got) < 1000: break
         off += 1000
     todo = [r for r in rows
             if (r.get("website") or "").strip()
-            and not (r.get("email") or "").strip()
+            and (not (r.get("email") or "").strip() or not (r.get("phone") or "").strip())
             and (not areas or r.get("area") in areas)]
-    print(f"{trade}: {len(rows)} rows, {len(todo)} need an email")
+    print(f"{trade or 'ALL TRADES'}: {len(rows)} rows, {len(todo)} missing an email and/or a phone")
     if not todo: return
-    found, done = [], 0
+    found, done, ne, np = [], 0, 0, 0
     with ThreadPoolExecutor(max_workers=16) as ex:
-        for row, em in zip(todo, ex.map(find_email, todo)):
+        for row, (em, ph) in zip(todo, ex.map(find_contacts, todo)):
             done += 1
-            if em: found.append({"name": row["name"], "area": row["area"], "email": em})
-            if done % 100 == 0:
-                print(f"   {done}/{len(todo)} crawled, {len(found)} emails")
-    print(f"   crawled {done}, found {len(found)} ({100*len(found)//max(1,done)}%)")
+            patch = {}
+            if em and not (row.get("email") or "").strip(): patch["email"] = em; ne += 1
+            if ph and not (row.get("phone") or "").strip(): patch["phone"] = ph; np += 1
+            if patch: found.append({"name": row["name"], "area": row["area"], **patch})
+            if done % 250 == 0:
+                print(f"   {done}/{len(todo)} crawled · {ne} emails · {np} phones")
+    print(f"   crawled {done} · {ne} emails ({100*ne//max(1,done)}%) · {np} phones ({100*np//max(1,done)}%)")
     for i in range(0, len(found), 100):
         print("   ", json.dumps(kb({"action": "patch", "rows": found[i:i+100]}))[:90])
 
 if __name__ == "__main__":
-    run(sys.argv[1], set(a.upper() for a in sys.argv[2:]))
+    trade = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "ALL" else None
+    run(trade, set(a.upper() for a in sys.argv[2:]))
