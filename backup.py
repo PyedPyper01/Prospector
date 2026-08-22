@@ -34,17 +34,33 @@ def post(payload, tries=3):
 
 
 def main():
-    rows, offset = [], 0
-    while True:
+    # Ask the store how many rows there SHOULD be, and keep going until we have them.
+    # Treating a short page as "end of data" is wrong: one slow or partial response ends the read early and
+    # produces a backup that looks complete and silently is not. That is the worst possible failure here.
+    expected = post({"action": "stats"}).get("total")
+    if not expected:
+        sys.exit("could not read the row count from the store — refusing to write a backup I cannot verify")
+    print(f"store reports {expected} rows")
+
+    rows, offset, empty_pages = [], 0, 0
+    while len(rows) < expected:
         d = post({"action": "get", "limit": PAGE, "offset": offset})
         if not d.get("ok"):
             sys.exit("store returned: " + json.dumps(d)[:300])
         got = d.get("results") or []
+        if not got:
+            empty_pages += 1
+            if empty_pages >= 3:
+                break                      # genuinely nothing left
+            offset += PAGE
+            continue
+        empty_pages = 0
         rows.extend(got)
-        print(f"  {len(rows)} rows")
-        if len(got) < PAGE:
-            break
-        offset += PAGE
+        print(f"  {len(rows)}/{expected} rows")
+        offset += len(got)
+
+    if len(rows) < expected:
+        sys.exit(f"INCOMPLETE: read {len(rows)} of {expected} rows — not writing a partial backup. Re-run.")
 
     out = os.path.join(os.path.expanduser("~/Desktop"),
                        f"AfterLife_supplier_store_backup_{time.strftime('%Y-%m-%d')}.csv")
