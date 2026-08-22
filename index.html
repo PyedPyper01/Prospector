@@ -246,6 +246,7 @@ td a:hover{text-decoration:underline}
       <button class="primary" id="findFreeBtn" onclick="findWebsitesFree()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">🔎 Find websites FREE <span class="muted">(£0 — runs from your browser, guesses each site &amp; checks it's live. Do this first.)</span></button>
       <button class="primary" id="findWebBtn" onclick="findWebsitesClaude()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#7a5cff,#5b3fd6)">🔎 Top up the rest with Claude <span class="muted">(~2p/firm — only the ones the free finder missed)</span></button>
       <button class="primary" id="enrichBtn" onclick="enrichAll()" disabled style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">✦ Enrich kept leads (email · contact · ownership)</button>
+      <button class="ghost small" id="refreshContactsBtn" onclick="refreshContactsFromDb()" style="width:100%;margin-top:8px">↻ Refresh emails &amp; phones from the database <span class="muted">(keeps your vetting — fills only what is blank)</span></button>
       <button class="ghost small" id="rankedCsvBtn" onclick="exportRanked()" disabled style="width:100%;margin-top:8px">⬇ Export ranked CSV (all leads + AL columns)</button>
       <div style="border:1px dashed var(--line);border-radius:8px;padding:8px;margin-top:8px">
         <div class="muted" style="font-size:11.5px;margin-bottom:4px"><b>Free route</b> — instead of the paid button above, copy the names into <b>your own Claude</b> (free on your subscription), ask it for the websites, and paste back:</div>
@@ -1167,6 +1168,53 @@ function loadMapsIntoGrid(){
   const e=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const csv=[H.join(',')].concat(MAPS.rows.map(r=>[r.name,r.trade,r.area,(r.postcode||'').split(' ')[0],'',r.website,r.phone,r.address,r.notes,'pp-maps'].map(e).join(','))).join('\n');
   loadManualSupply(csv);
+}
+
+
+/* ---------- pull contacts into the grid you already have ----------
+   Sourcing and enrichment run separately: the background crawler reads each firm's own website and writes
+   emails and phones to the shared store. Re-loading the grid to pick those up would throw away the vetting
+   already done on it, so this fills ONLY the blank contact fields on the rows in front of you and leaves
+   every other column, and every vet verdict, untouched.
+   Matching is on website domain first (exact), then name+area. */
+async function refreshContactsFromDb(){
+  if(!LEADS.length){ log('Nothing in the grid to refresh.','wn'); return; }
+  const btn=$('refreshContactsBtn'); if(btn) btn.disabled=true;
+  const dom = u => { const m=/https?:\/\/(?:www\.)?([^\/?#]+)/i.exec(u||''); return m?m[1].toLowerCase():''; };
+  const nkey = (n,a) => String(n||'').toLowerCase().replace(/\b(ltd|limited|llp|plc)\b/g,'').replace(/[^a-z0-9]/g,'')+'|'+String(a||'').toUpperCase();
+  const trades = [...new Set(LEADS.map(l=>l.pubCatLabel||l.batchCategory||l.trade).filter(Boolean))];
+  log(`Refreshing contacts for ${LEADS.length} row(s)${trades.length?' ('+trades.join(', ')+')':''}…`);
+
+  const byDom=new Map(), byName=new Map();
+  try{
+    const pulls = trades.length ? trades : [null];
+    for(const t of pulls){
+      let off=0;
+      for(;;){
+        const body={action:'get',limit:1000,offset:off}; if(t) body.trade=t;
+        const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const d=await r.json();
+        const got=(d&&d.results)||[];
+        for(const x of got){
+          const dd=dom(x.website); if(dd&&!byDom.has(dd)) byDom.set(dd,x);
+          const nk=nkey(x.name,x.area); if(!byName.has(nk)) byName.set(nk,x);
+        }
+        if(got.length<1000) break;
+        off+=got.length;
+      }
+    }
+  }catch(e){ log('Could not read the database — '+e.message,'er'); if(btn) btn.disabled=false; return; }
+
+  let em=0, ph=0, miss=0;
+  for(const l of LEADS){
+    const hit = byDom.get(dom(l.website)) || byName.get(nkey(l.name,l.batchArea||l.area));
+    if(!hit){ miss++; continue; }
+    if(!(l.emails||'').trim() && (hit.email||'').trim()){ l.emails=hit.email.trim(); em++; }
+    if(!(l.phone||'').trim()  && (hit.phone||'').trim()){ l.phone =hit.phone.trim();  ph++; }
+  }
+  render(); updateButtons&&updateButtons();
+  log(`Filled ${em} email(s) and ${ph} phone(s). ${miss} row(s) had no match in the database.`, em||ph?'ok':'wn');
+  if(btn) btn.disabled=false;
 }
 
 /* ---------- BATCH QUEUE: run a matrix of areas × categories unattended (resume · master CSV · webhook) ---------- */
