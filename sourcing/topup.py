@@ -20,6 +20,7 @@ SERPER = "https://postcodeprospector.netlify.app/.netlify/functions/serper"
 OC     = re.compile(r"^([A-Z]{1,2}\d{1,2}[A-Z]?)\s*\d[A-Z]{2}$", re.I)
 CREDITS_PER_QUERY = 3
 spent = {"q": 0}
+HARD_CAP = {"credits": 0}      # set from CREDIT_BUDGET; a real stop during the run, not just at build time
 
 def post(url, payload, timeout=180):
     r = urllib.request.Request(url, data=json.dumps(payload).encode(),
@@ -56,6 +57,8 @@ def outcode_centre(code):
         return None
 
 def maps(term, centre):
+    if HARD_CAP["credits"] and spent["q"] * CREDITS_PER_QUERY >= HARD_CAP["credits"]:
+        raise SystemExit(f"\n*** Credit cap of {HARD_CAP['credits']} reached — stopping. Everything found is already saved.")
     spent["q"] += 1
     lat, lon, loc = centre
     try:
@@ -77,7 +80,12 @@ def main():
     do_broad = "--broad" in sys.argv
     TERMS = load_terms()
     rows = all_rows()
-    gaps = [r for r in rows if (r.get("website") or "").strip() and not (r.get("phone") or "").strip()]
+    # A row is worth topping up if it is missing ANY of phone / postcode / address. Maps returns all three
+    # in the same result, so filling one costs exactly the same as filling three.
+    def thin(r):
+        return (r.get("website") or "").strip() and not all(
+            (r.get(f) or "").strip() for f in ("phone", "postcode", "address"))
+    gaps = [r for r in rows if thin(r)]
 
     targeted = collections.defaultdict(list)     # (outcode, trade) -> rows
     orphans  = collections.defaultdict(list)     # (area, trade)    -> rows  (no postcode to aim at)
@@ -90,7 +98,8 @@ def main():
         else: orphans[((r.get("area") or "").upper(), t)].append(r)
 
     tq = len(targeted)
-    print(f"phone gaps on Maps-able trades: {sum(len(v) for v in targeted.values()) + sum(len(v) for v in orphans.values())}")
+    print(f"rows missing phone/postcode/address on Maps-able trades: "
+          f"{sum(len(v) for v in targeted.values()) + sum(len(v) for v in orphans.values())}")
     print(f"  TARGETED  {tq:>5} district+trade pairs = {tq*CREDITS_PER_QUERY:>6} credits  (covers {sum(len(v) for v in targeted.values())} rows)")
     print(f"  BROADER   {len(orphans):>5} area+trade pairs, no postcode recorded")
     print(f"            at ~14 districts each      = {len(orphans)*14*CREDITS_PER_QUERY:>6} credits  (covers {sum(len(v) for v in orphans.values())} rows)")
@@ -98,11 +107,31 @@ def main():
         print("\nnothing changed — add --run to do the targeted pass, --run --broad for both")
         return
 
-    jobs = [(oc, t, rs) for (oc, t), rs in targeted.items()]
+    # With --broad, skip the targeted district jobs: they are cheap, quick, and normally already done, so
+    # leaving them at the front of a 22,000-job queue just spends credits re-checking solved rows.
+    jobs = [] if do_broad else [(oc, t, rs) for (oc, t), rs in targeted.items()]
+
     if do_broad:
-        print("\n--broad given: the broader pass is not run automatically. Do the targeted pass first, re-measure,")
-        print("then decide — the free website crawl usually closes much of the gap for nothing.")
-    print(f"\nrunning the targeted pass over {len(jobs)} district+trade pairs…")
+        # A query costs the same whether it matches twenty firms or none, so the return depends entirely on how
+        # many gap-firms sit in the district being searched. Work the biggest area+trade pairs FIRST and stop at
+        # the budget: that way the money buys the most records it can, rather than being spread evenly over
+        # pairs holding one firm each.
+        budget = int(os.environ.get("CREDIT_BUDGET", "70000"))
+        HARD_CAP["credits"] = budget
+        per_area = int(os.environ.get("DISTRICTS_PER_AREA", "14"))
+        ranked = sorted(orphans.items(), key=lambda x: -len(x[1]))
+        # Cap the job list by ARITHMETIC, not by checking spend while building it — at build time nothing has
+        # been spent, so the guard never fired and a $9 budget ran to $18 before it was noticed.
+        max_jobs = max(1, budget // CREDITS_PER_QUERY)
+        for (area, trade), rs in ranked:
+            if len(jobs) >= max_jobs: break
+            for n in range(1, per_area + 1):
+                if len(jobs) >= max_jobs: break
+                jobs.append((f"{area}{n}", trade, rs))
+        print(f"\nbroad pass: {len(ranked)} pairs available, biggest first · capped at {len(jobs)} jobs "
+              f"= {len(jobs)*CREDITS_PER_QUERY} credits (${len(jobs)*CREDITS_PER_QUERY/1000:.2f})")
+
+    print(f"\nrunning over {len(jobs)} district+trade pairs…")
 
     fixed, checked = [], 0
     def work(job):
@@ -114,28 +143,51 @@ def main():
         for term in TERMS[trade][:1]:                 # one term is enough to find a firm we already know of
             for p in maps(term, centre):
                 d = dom(p.get("website"))
-                ph = (p.get("phone") or "").strip()
-                if d and ph and d in want:
-                    out.append({"name": want[d]["name"], "area": want[d]["area"], "phone": ph})
-                    want.pop(d, None)
+                if not d or d not in want: continue
+                row = want[d]
+                patch = {"name": row["name"], "area": row["area"]}
+                if not (row.get("phone") or "").strip() and (p.get("phone") or "").strip():
+                    patch["phone"] = p["phone"].strip()
+                addr = (p.get("address") or "").replace(", United Kingdom", "").strip()
+                if not (row.get("address") or "").strip() and addr:
+                    patch["address"] = addr
+                m2 = re.search(r"\b[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b", addr, re.I)
+                if not (row.get("postcode") or "").strip() and m2:
+                    patch["postcode"] = m2.group(0).upper()
+                if len(patch) > 2: out.append(patch)
+                want.pop(d, None)
             if not want: break
         return out
 
+    seen_keys = set()
+    def flush(batch):
+        """Write NOW. Holding matches until the end means stopping the run — for any reason — throws away
+        everything it found. That is exactly what happened once: 8,311 matched firms lost on a kill."""
+        uniq = []
+        for f in batch:
+            k = (f["name"], f["area"])
+            if k in seen_keys: continue
+            seen_keys.add(k); uniq.append(f)
+        for i in range(0, len(uniq), 100):
+            post(KB, {"action": "patch", "rows": uniq[i:i+100]})
+        return len(uniq)
+
+    written = 0
     with ThreadPoolExecutor(max_workers=4) as ex:
         for res in ex.map(work, jobs):
             checked += 1
             fixed += res
-            if checked % 50 == 0:
-                print(f"   {checked}/{len(jobs)} pairs · {len(fixed)} phones matched · {spent['q']*CREDITS_PER_QUERY} credits")
+            if len(fixed) >= 300:
+                written += flush(fixed); fixed = []
+            if checked % 100 == 0:
+                cr = spent['q'] * CREDITS_PER_QUERY
+                tot = written + len(fixed)
+                print(f"   {checked}/{len(jobs)} · {tot} improved ({written} saved) · {cr} credits "
+                      f"(${cr/1000:.2f}) · {cr/max(1,tot):.1f} each")
     # de-dupe patches
-    seen, clean = set(), []
-    for f in fixed:
-        k = (f["name"], f["area"])
-        if k in seen: continue
-        seen.add(k); clean.append(f)
-    print(f"\nmatched {len(clean)} phone numbers · {spent['q']} queries = {spent['q']*CREDITS_PER_QUERY} credits")
-    for i in range(0, len(clean), 100):
-        print("   ", json.dumps(post(KB, {"action": "patch", "rows": clean[i:i+100]}))[:90])
+    written += flush(fixed)
+    cr = spent['q'] * CREDITS_PER_QUERY
+    print(f"\nimproved {written} firms · {spent['q']} queries = {cr} credits (${cr/1000:.2f})")
 
 if __name__ == "__main__":
     main()
