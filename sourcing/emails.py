@@ -135,7 +135,7 @@ def run(trade, areas):
             and (not areas or r.get("area") in areas)]
     print(f"{trade or 'ALL TRADES'}: {len(rows)} rows, {len(todo)} missing an email and/or a phone")
     if not todo: return
-    found, done, ne, np = [], 0, 0, 0
+    found, done, ne, np, written = [], 0, 0, 0, 0
     with ThreadPoolExecutor(max_workers=16) as ex:
         for row, (em, ph) in zip(todo, ex.map(find_contacts, todo)):
             done += 1
@@ -143,11 +143,17 @@ def run(trade, areas):
             if em and not (row.get("email") or "").strip(): patch["email"] = em; ne += 1
             if ph and not (row.get("phone") or "").strip(): patch["phone"] = ph; np += 1
             if patch: found.append({"name": row["name"], "area": row["area"], **patch})
+            # Write in blocks as we go. Holding everything to the end means a run of several hours has
+            # nothing in the database until the last moment, and any interruption throws the lot away — the
+            # same trap the area sweep had. It also keeps the top-up pricing honest while this is running.
+            if len(found) >= 200:
+                kb({"action": "patch", "rows": found}); written += len(found); found = []
             if done % 250 == 0:
-                print(f"   {done}/{len(todo)} crawled · {ne} emails · {np} phones")
+                print(f"   {done}/{len(todo)} crawled · {ne} emails · {np} phones · {written} written")
     print(f"   crawled {done} · {ne} emails ({100*ne//max(1,done)}%) · {np} phones ({100*np//max(1,done)}%)")
     for i in range(0, len(found), 100):
-        print("   ", json.dumps(kb({"action": "patch", "rows": found[i:i+100]}))[:90])
+        kb({"action": "patch", "rows": found[i:i+100]}); written += len(found[i:i+100])
+    print(f"   {written} rows updated")
 
 if __name__ == "__main__":
     trade = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "ALL" else None
