@@ -61,6 +61,35 @@ exports.handler = async (event) => {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: failed.length === 0, patched: done, failed: failed.slice(0, 10) }) };
     }
 
+    if (action === "merge") {
+      // Bulk partial update: ONE request for the whole batch, touching only the columns supplied.
+      // `patch` loops row by row server-side — 100 rows meant 100 database round trips inside a single
+      // function call, 18.8s against a 26s limit, and it was the reason a national sweep crawled.
+      // `upsert` is fast but maps every column and writes null for anything absent, which would blank
+      // fields. Passing through only the provided keys gives ON CONFLICT DO UPDATE on those columns alone.
+      const rows = (Array.isArray(body.rows) ? body.rows : [])
+        .filter(r => r && r.name && r.area)
+        .map(r => { const o = { ...r }; o.area = String(o.area).toUpperCase(); return o; });
+      if (!rows.length) return { statusCode: 200, headers, body: JSON.stringify({ error: "no valid rows" }) };
+      // PostgREST takes its column list from the FIRST row of a bulk insert, so a batch whose rows carry
+      // different fields silently drops the extras — a batch mixing {postcode} and {trade} wrote no
+      // postcodes at all and reported success. Group by field-set and send one request per shape.
+      const groups = new Map();
+      for (const r of rows) {
+        const k = Object.keys(r).sort().join(",");
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(r);
+      }
+      let merged = 0; const failed = [];
+      for (const batch of groups.values()) {
+        const r = await fetch(REST + "?on_conflict=name,area", {
+          method: "POST", headers: { ...H, Prefer: "resolution=merge-duplicates,return=minimal" },
+          body: JSON.stringify(batch) });
+        r.ok ? merged += batch.length : failed.push({ status: r.status, detail: (await r.text()).slice(0, 160) });
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: !failed.length, merged, shapes: groups.size, failed }) };
+    }
+
     if (action === "check") {
       const r = await fetch(REST + `?select=name,area,website,status${q("trade", body.trade)}${q("area", (body.area || "").toUpperCase())}&limit=20000`, { headers: H });
       if (!r.ok) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, status: r.status, detail: (await r.text()).slice(0, 300) }) };

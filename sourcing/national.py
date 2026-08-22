@@ -23,6 +23,9 @@ PC = re.compile(r"\b([A-Z]{1,2})\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b", re.I)
 MAX_OUTCODES  = int(os.environ.get("MAX_OUTCODES", "10"))    # credit budget per area
 SKIP_OUTCODES = int(os.environ.get("SKIP_OUTCODES", "0"))    # resume a capped area where the last run stopped
 CREDITS = {"n": 0}
+# A hard ceiling on spend, enforced on every call rather than checked once while planning. Set
+# CREDIT_BUDGET to cap a run; 0 means uncapped. Each maps query costs 3 credits.
+CREDIT_CAP = int(os.environ.get("CREDIT_BUDGET", "0"))
 
 # Trade filters live in ../trades.json — ONE definition shared by this runner and the website, so the two
 # cannot drift apart. Every KEEP/DROP list was written from a live sample of what Google actually returns for
@@ -74,6 +77,9 @@ def outcodes(area):
         return [x for grp in ex.map(one, range(1, 41)) for x in grp]
 
 def query(q, ll, location):
+    if CREDIT_CAP and CREDITS["n"] * 3 >= CREDIT_CAP:
+        raise SystemExit(f"\n*** Credit cap of {CREDIT_CAP} reached after {CREDITS['n']} queries. "
+                         f"Everything found so far is already saved. ***")
     CREDITS["n"] += 1
     try:
         req = urllib.request.Request(SERPER, data=json.dumps({"q": q, "ll": ll, "location": location}).encode(),

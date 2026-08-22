@@ -72,7 +72,7 @@ def post(rows, trade, tag="claude-sourced", area=None, refresh=True):
     if no_site: print(f"  refused, no website: {len(no_site)}")
     if upgrades:
         for i in range(0, len(upgrades), 100):
-            _call({"action": "patch", "rows": upgrades[i:i+100]})
+            _call({"action": "merge", "rows": upgrades[i:i+100]})
         print(f"  upgraded {len(upgrades)} row(s) already held (filled postcode/address/phone)")
     elif dupes:
         print(f"  already held and complete: {len(dupes)}")
