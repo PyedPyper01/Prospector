@@ -50,6 +50,9 @@ exports.handler = async (event) => {
       // town name. Postcode areas have no clean list of towns — CO7's parishes alone number 22 — but every
       // outcode has a free centroid from postcodes.io, so this covers an area uniformly and cheaply.
       ...(b.ll ? { ll: b.ll } : {}),
+      // Ask for MORE results per call. Serper bills per call, not per result, so a bigger page is the single
+      // biggest lever on cost — the usage log showed 3 credits buying only 10 rows.
+      ...(b.num ? { num: b.num } : {}),
       ...(b.page ? { page: b.page } : {}) });
     if (!r.ok || !r.json) {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: false, status: r.status, detail: r.error || r.raw }) };
