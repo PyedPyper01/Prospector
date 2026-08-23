@@ -3011,7 +3011,10 @@ async function vetRank(){
   // as TEXT then JSON.parse in a try/catch (so a timeout HTML page / truncated body doesn't crash the run,
   // and we can LOG the real body); retry with backoff; a batch that keeps failing leaves its leads UNVETTED
   // (still in the grid) instead of aborting the whole ranking.
-  const BATCH_SZ=5;   // small batches: once Enrich adds site text, 12/call overran Netlify's function timeout (504). 5/call stays well inside it.
+  // Timed against the live function: 5 leads take 15.6s and 10 take 15.1s — the cost is the model call, not
+  // the leads, so a batch of 5 wastes half of every call. 20 is NOT safe: only 15 of 20 came back, the
+  // response truncating silently, which would lose five leads a batch without any error.
+  const BATCH_SZ=10;
   const batches=[];for(let i=0;i<LEADS.length;i+=BATCH_SZ)batches.push(LEADS.slice(i,i+BATCH_SZ));
   let done=0,ok=false,failedBatches=0,noKey=false;
   const callVet=async(batch)=>{
@@ -3031,7 +3034,9 @@ async function vetRank(){
   // independent Claude call, so waiting for one before starting the next left the browser idle most of the
   // time — a 473-lead grid took ~20 minutes. Four in flight cuts that to roughly a quarter with identical
   // results; the pool is kept small deliberately so we stay well inside the API rate limit.
-  const POOL=4; let nextIdx=0;
+  // Eight batches in flight rather than four. Each is a separate function invocation waiting on the model,
+  // so this is idle time, not load.
+  const POOL=8; let nextIdx=0;
   const runOne=async(bi)=>{
     const batch=batches[bi];
     let d=null, lastErr='';
