@@ -53,7 +53,27 @@ def jget(url, tries=2):
         except Exception: time.sleep(1)
     return None
 
+OC_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outcodes.json")
+
 def outcodes(area):
+    """Cached on disk. Postcode districts do not change, and resolving them was costing 34s per area against
+    15s of actual searching — 70% of the run. The cost appeared when letter-suffixed probing was added to fix
+    EC/WC, taking 40 lookups per area up to 560; the Florists run never paid it."""
+    try:
+        cache = json.load(open(OC_CACHE)) if os.path.exists(OC_CACHE) else {}
+    except Exception:
+        cache = {}
+    if area in cache:
+        return [tuple(x) for x in cache[area]]
+    found = _probe_outcodes(area)
+    cache[area] = found
+    try:
+        with open(OC_CACHE, "w") as f: json.dump(cache, f)
+    except Exception: pass
+    return found
+
+
+def _probe_outcodes(area):
     """Outcode centroid AND its district name. Both are needed: `ll` on its own is NOT reliably honoured —
     the same Liverpool coordinates returned Brooklyn NY and Cambridge OH on different calls, and Colchester's
     returned Rutherford NJ. Sending `location` alongside pins the search to the right country every time."""
@@ -109,10 +129,21 @@ def run(trade, areas):
         capped = max(0, len(ocs) - SKIP_OUTCODES - MAX_OUTCODES)
         if not used:
             print(f"{area}: nothing left beyond outcode {SKIP_OUTCODES} — already complete"); continue
+        # Query the districts CONCURRENTLY. One at a time meant 14 x 2.3s = 32s per area purely waiting on
+        # the network; Serper allows 50 requests a second on this plan. This is the difference between 55
+        # minutes a trade and about ten.
         seen, found = set(), []
-        for oc, lat, lon, loc in used:
+        def fetch_oc(o):
+            oc, lat, lon, loc = o
+            out = []
             for syn in syns:
-                for p in query(syn, f"@{lat:.4f},{lon:.4f},13z", loc):
+                out += query(syn, f"@{lat:.4f},{lon:.4f},13z", loc)
+            return out
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            batches = list(ex.map(fetch_oc, used))
+        for batch in batches:
+            for p in batch:
+                if True:
                     site = (p.get("website") or "").strip()
                     if not site: continue
                     dom = re.sub(r"^https?://(www\.)?", "", site).split("/")[0].lower()
@@ -122,7 +153,6 @@ def run(trade, areas):
                     m = PC.search(p.get("address") or "")
                     if not m or m.group(1).upper() != area: continue
                     seen.add(dom); found.append((p, dom))
-            time.sleep(0.2)
         rows = [{"name": p["name"], "area": area, "website": p.get("website"), "phone": p.get("phone") or "",
                  "postcode": (PC.search(p.get("address") or "") or [None]) and PC.search(p["address"]).group(0).upper(),
                  "address": (p.get("address") or "").replace(", United Kingdom", ""),
