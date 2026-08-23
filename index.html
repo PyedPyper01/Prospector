@@ -2942,12 +2942,29 @@ function autoSelectTop(n){
 function selectTopPerArea(n){
   n=Math.max(0,n||0);
   LEADS.forEach(l=>l.alSelect=false);
+
+  // Rows loaded straight from the database have no vet verdict. Requiring one meant this button silently
+  // ticked NOTHING on an un-vetted grid and looked broken. Use vetted rows when there are any, otherwise
+  // fall back to every row that is not excluded, and say which happened.
+  const vetted = LEADS.filter(l=>l.alVerdict && l.alVerdict!=='EXCLUDE');
+  const usingVet = vetted.length > 0;
+  const pool = usingVet ? vetted : LEADS.filter(l=>l.alVerdict!=='EXCLUDE' && !l.excludeReason);
+  if(!pool.length){ log('Nothing to tick — every row is excluded, or the grid is empty.','wn'); return; }
+
   const byArea={};
-  LEADS.filter(l=>l.alVerdict&&l.alVerdict!=='EXCLUDE').forEach(l=>{const a=l.area||'?';(byArea[a]=byArea[a]||[]).push(l);});
+  pool.forEach(l=>{const a=(l.batchArea||l.area||'?').toUpperCase();(byArea[a]=byArea[a]||[]).push(l);});
+
+  // Un-vetted rows have no priority score, so order them by how complete they are — a firm with an email,
+  // a phone and a postcode is a better lead than a bare name, and that is the only signal available.
+  const completeness = l => -(((l.emails||'').trim()?2:0) + ((l.phone||'').trim()?1:0) + ((l.postcode||'').trim()?1:0));
+  const sorter = usingVet ? ((a,b)=>rankVal(a)-rankVal(b)) : ((a,b)=>completeness(a)-completeness(b) || String(a.name||'').localeCompare(String(b.name||'')));
+
   let total=0;
-  Object.values(byArea).forEach(arr=>{arr.sort((a,b)=>rankVal(a)-rankVal(b)).slice(0,n).forEach(l=>{l.alSelect=true;total++;});});
+  Object.values(byArea).forEach(arr=>{arr.sort(sorter).slice(0,n).forEach(l=>{l.alSelect=true;total++;});});
   render();updateSelCount();
-  log(`✓ Ticked the top ${n} in each area — ${total} across ${Object.keys(byArea).length} area(s). Adjust any, then ▲ Publish selected.`,'ok');
+  log(`✓ Ticked the top ${n} in each area — ${total} across ${Object.keys(byArea).length} area(s), `
+      + (usingVet ? 'ranked by Vet & Rank.' : 'ranked by how complete the contact details are (these rows have not been vetted).')
+      + ' Adjust any, then ▲ Publish selected.','ok');
 }
 function toggleSelect(uid,checked){const l=LEADS.find(x=>x._uid===uid);if(l)l.alSelect=!!checked;updateSelCount();}
 function toggleSelectAll(checked){LEADS.forEach(l=>l.alSelect=!!checked);render();updateSelCount();log(checked?`Ticked all ${LEADS.length} row(s). Untick any you don't want, then ☎ Get contact details / ▲ Publish.`:'Unticked all rows.','ok');}
