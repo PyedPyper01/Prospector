@@ -3160,19 +3160,34 @@ function crmRow(l,vetted){
   };
 }
 async function crmPost(mode,rows){
-  const chunks=[];for(let i=0;i<rows.length;i+=200)chunks.push(rows.slice(i,i+200));
+  // 100 a time: a bigger batch used to run the receiving function past its
+  // ten-second limit, which cut a publish off part-way through.
+  const chunks=[];for(let i=0;i<rows.length;i+=100)chunks.push(rows.slice(i,i+100));
   const tot={inserted:0,refreshed:0,inPipeline:0,partnerFlagged:0,emailDupes:0,invalid:0};
+  const failed=[];
   for(let i=0;i<chunks.length;i++){
     log(`  CRM publish ${i+1}/${chunks.length} (${chunks[i].length} rows)…`);
-    const r=await fetch('/.netlify/functions/publishcrm',{method:'POST',body:JSON.stringify({mode,rows:chunks[i]})});
-    const d=await r.json();
-    if(!d.ok)throw new Error(d.error||'CRM publish failed');
-    ['inserted','refreshed','inPipeline','partnerFlagged','emailDupes','invalid'].forEach(k=>tot[k]+=(d[k]||0));
+    try{
+      const r=await fetch('/.netlify/functions/publishcrm',{method:'POST',body:JSON.stringify({mode,rows:chunks[i]})});
+      const d=await r.json();
+      if(!d.ok) throw new Error(d.error||('HTTP '+r.status));
+      ['inserted','refreshed','inPipeline','partnerFlagged','emailDupes','invalid'].forEach(k=>tot[k]+=(d[k]||0));
+    }catch(e){
+      // One bad batch must NOT bin the rest of the publish. Note it, carry on,
+      // and say plainly at the end which batches need running again.
+      failed.push({batch:i+1,rows:chunks[i].length,why:e.message});
+      log(`  ✗ batch ${i+1} failed (${chunks[i].length} rows): ${e.message} — continuing`,'wn');
+    }
   }
+  tot.failedBatches=failed;
   return tot;
 }
 function crmSummary(t){
   let s=`${t.inserted} new in the approval queue, ${t.refreshed} refreshed`;
+  if(t.failedBatches&&t.failedBatches.length){
+    const n=t.failedBatches.reduce((a,b)=>a+b.rows,0);
+    s+=`; ${t.failedBatches.length} batch(es) FAILED covering about ${n} leads — publish again to retry just those`;
+  }
   if(t.inPipeline)s+=`, ${t.inPipeline} already live in the pipeline (left untouched)`;
   if(t.partnerFlagged)s+=`, ${t.partnerFlagged} flagged as already invited to AfterLife`;
   if(t.emailDupes)s+=`, ${t.emailDupes} flagged as email duplicates`;
