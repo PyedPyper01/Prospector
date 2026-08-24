@@ -3053,10 +3053,11 @@ async function vetRank(){
   // as TEXT then JSON.parse in a try/catch (so a timeout HTML page / truncated body doesn't crash the run,
   // and we can LOG the real body); retry with backoff; a batch that keeps failing leaves its leads UNVETTED
   // (still in the grid) instead of aborting the whole ranking.
-  // Timed against the live function: 5 leads take 15.6s and 10 take 15.1s — the cost is the model call, not
-  // the leads, so a batch of 5 wastes half of every call. 20 is NOT safe: only 15 of 20 came back, the
-  // response truncating silently, which would lose five leads a batch without any error.
-  const BATCH_SZ=10;
+  // BACK TO 5. A batch of 10 was timed at 15s and looked safe — but that test used two-line synthetic site
+  // text. Real leads carry up to 1,500 characters EACH after Enrich, so 10 per call overruns Netlify's 26s
+  // limit and every batch returns a 504. That is what the original comment here warned about, and the
+  // benchmark that overrode it was not representative of the data. 5 stays well inside the limit.
+  const BATCH_SZ=5;
   const batches=[];for(let i=0;i<LEADS.length;i+=BATCH_SZ)batches.push(LEADS.slice(i,i+BATCH_SZ));
   let done=0,ok=false,failedBatches=0,noKey=false;
   const callVet=async(batch)=>{
@@ -3076,8 +3077,8 @@ async function vetRank(){
   // independent Claude call, so waiting for one before starting the next left the browser idle most of the
   // time — a 473-lead grid took ~20 minutes. Four in flight cuts that to roughly a quarter with identical
   // results; the pool is kept small deliberately so we stay well inside the API rate limit.
-  // Eight batches in flight rather than four. Each is a separate function invocation waiting on the model,
-  // so this is idle time, not load.
+  // Concurrency is the safe half of the speedup: each batch is its own function invocation, so running more
+  // at once does not lengthen any single call and cannot cause the 504.
   const POOL=8; let nextIdx=0;
   const runOne=async(bi)=>{
     const batch=batches[bi];
