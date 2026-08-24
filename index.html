@@ -246,6 +246,7 @@ td a:hover{text-decoration:underline}
       <button class="primary" id="findFreeBtn" onclick="findWebsitesFree()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">🔎 Find websites FREE <span class="muted">(£0 — runs from your browser, guesses each site &amp; checks it's live. Do this first.)</span></button>
       <button class="primary" id="findWebBtn" onclick="findWebsitesClaude()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#7a5cff,#5b3fd6)">🔎 Top up the rest with Claude <span class="muted">(~2p/firm — only the ones the free finder missed)</span></button>
       <button class="primary" id="enrichBtn" onclick="enrichAll()" disabled style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">✦ Enrich kept leads (email · contact · ownership)</button>
+      <button class="ghost small" onclick="collapseNationalFirms()" style="width:100%;margin-top:8px">⧉ Collapse national firms <span class="muted">(one firm listed in many areas → a single row covering them all)</span></button>
       <button class="ghost small" id="refreshContactsBtn" onclick="refreshContactsFromDb()" style="width:100%;margin-top:8px">↻ Refresh emails &amp; phones from the database <span class="muted">(keeps your vetting — fills only what is blank)</span></button>
       <button class="ghost small" id="rankedCsvBtn" onclick="exportRanked()" disabled style="width:100%;margin-top:8px">⬇ Export ranked CSV (all leads + AL columns)</button>
       <div style="border:1px dashed var(--line);border-radius:8px;padding:8px;margin-top:8px">
@@ -1215,6 +1216,42 @@ async function refreshContactsFromDb(){
   render(); updateButtons&&updateButtons();
   log(`Filled ${em} email(s) and ${ph} phone(s). ${miss} row(s) had no match in the database.`, em||ph?'ok':'wn');
   if(btn) btn.disabled=false;
+}
+
+
+/* ---------- collapse a firm that covers many areas into ONE row ----------
+   Some trades are national by nature: an ashes-at-sea operator or a memorial-jewellery maker serves the whole
+   country, so a per-area sweep records it once per area. Ash scattering came back as 617 rows that were 13
+   firms; memorial benches as 618 rows that were 7.
+   Worse than the clutter, publishing groups by domain+area, so the same firm would publish as 103 separate
+   "Local" records sharing one name — and the marketplace slugs them identically, so they overwrite each other
+   and the firm ends up visible in a single area. One row carrying all its areas is the correct shape. */
+const NATIONAL_AT = 8;   // a firm in this many areas or more is Regional/National, not a set of branches
+
+function collapseNationalFirms(){
+  if(!LEADS.length){ log('Nothing in the grid to collapse.','wn'); return; }
+  const key = l => domainOf(l.website) || ('n:'+nameKey(l.name));
+  const groups = new Map();
+  LEADS.forEach(l=>{ const k=key(l); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(l); });
+
+  const kept=[]; let collapsed=0, firms=0;
+  groups.forEach(g=>{
+    const areas=[...new Set(g.map(l=>(l.batchArea||l.area||'').toUpperCase()).filter(Boolean))].sort();
+    if(g.length<2 || areas.length<NATIONAL_AT){ kept.push(...g); return; }
+    // keep the most complete row as the survivor and hang every area off it
+    const best=g.slice().sort((a,b)=>
+      (((b.emails||'').trim()?2:0)+((b.phone||'').trim()?1:0)+((b.postcode||'').trim()?1:0)) -
+      (((a.emails||'').trim()?2:0)+((a.phone||'').trim()?1:0)+((a.postcode||'').trim()?1:0)))[0];
+    best.areasList = areas;
+    best.alTier = areas.length >= 40 ? 'National' : 'Regional';
+    best.alNotes = ((best.alNotes||'') + ` [${best.alTier} — covers ${areas.length} postcode areas]`).trim();
+    kept.push(best); collapsed += g.length-1; firms++;
+  });
+  if(!collapsed){ log(`No national firms found — every firm appears in fewer than ${NATIONAL_AT} areas.`,'wn'); return; }
+  LEADS = kept;
+  render(); updateSelCount && updateSelCount(); updateButtons && updateButtons();
+  log(`⧉ Collapsed ${firms} national firm(s): ${collapsed} duplicate row(s) merged away. `
+    + `The grid is now ${LEADS.length} row(s). Each collapsed firm publishes ONCE covering all its areas.`,'ok');
 }
 
 /* ---------- BATCH QUEUE: run a matrix of areas × categories unattended (resume · master CSV · webhook) ---------- */
@@ -3481,7 +3518,10 @@ async function publishAfterLife(){
     const gCatLabel=primary.pubCatLabel||(AL_CATEGORIES.find(c=>c.id===gCatId)||{}).label||catLabel;
     return {id:(slugId(primary.name)+'-'+(area||'xx').toLowerCase()),      // shared root, area suffix → one slot per area
       name:primary.name,category:gCatId,categoryLabel:gCatLabel,
-      areas:[area], area, tier:'Local',
+      // A collapsed national firm carries every area it covers; publishing it once under all of them keeps
+      // one marketplace record instead of N identically-slugged records that overwrite each other.
+      areas: (primary.areasList && primary.areasList.length ? primary.areasList : [area]),
+      area, tier: (primary.alTier || 'Local'),
       district:primary.district||'',town,address:primary.address||'',website:primary.website||'',
       credentials:(primary.alCredentials||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean),
       description:primary.alDescription||'',priority:typeof primary.alPriority==='number'?primary.alPriority:99,
