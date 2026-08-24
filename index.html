@@ -146,7 +146,7 @@ td a:hover{text-decoration:underline}
       <h3>Optional · Load from the database <span class="muted">(firms already stored — sourced by you, a co-worker, or a background run)</span></h3>
       <label>Trade <span class="muted">(pick one — the whole database is too big to load in a single go)</span></label>
       <select id="dbTrade"></select>
-      <label>Area <span class="muted">(optional — one area e.g. <b>CO</b>, or blank for all areas)</span></label>
+      <label>Area <span class="muted">(optional — one or several, e.g. <b>CO, CM, IP</b>, or blank for all areas)</span></label>
       <input type="text" id="dbArea" placeholder="blank = all areas" style="text-transform:uppercase">
       <button class="small" style="width:100%;margin-top:8px" onclick="loadFromDatabase()">⬇ Load stored firms into the grid</button>
       <div id="dbLoadStatus" class="muted" style="font-size:12px;margin-top:6px">Pulls suppliers already stored in the database into the grid — same review → Vet &amp; Rank → publish flow as a CSV. Tip: untick <b>Evaluate on import</b> above to load them as-is (free, no re-checks).</div>
@@ -1958,7 +1958,10 @@ function clearManualSupply(){
    import → review → Vet & Rank → publish path. No new grid logic. Respects the "Evaluate on import" checkbox. */
 async function loadFromDatabase(){
   const trade=(($('dbTrade')&&$('dbTrade').value)||'').trim();
-  const area=(($('dbArea')&&$('dbArea').value)||'').trim().toUpperCase();
+  // Accept a LIST of areas, not one. The sweep box above takes "CO, CM, IP", so taking a single value here
+  // was an inconsistency that silently searched for an area literally named "NE, BD, S, NG, …".
+  const areaList=(($('dbArea')&&$('dbArea').value)||'').toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+  const area=areaList.join(', ');
   const st=$('dbLoadStatus');
   if(st)st.textContent='Loading from database…';
   try{
@@ -1969,7 +1972,8 @@ async function loadFromDatabase(){
       log('Database load — enter a Trade name (e.g. "Florists") or an Area. Loading every trade at once exceeds what the server can return in one response.','er');
       return;
     }
-    const body={action:'get',limit:20000}; if(trade)body.trade=trade; if(area)body.area=area;
+    const body={action:'get',limit:20000}; if(trade)body.trade=trade;
+    if(areaList.length===1) body.area=areaList[0];
     const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const txt=await r.text();                      // read as TEXT first — a 502 returns HTML/JSON-error, not our shape
     let d=null; try{ d=JSON.parse(txt); }catch(e){ d=null; }
@@ -1978,8 +1982,21 @@ async function loadFromDatabase(){
       if(/ResponseSizeTooLarge|payload size/i.test(txt)) msg='too many rows for one response — narrow it with a Trade and/or an Area.';
       if(st)st.textContent='Load failed — '+msg; log('Database load failed — '+msg,'er'); return;
     }
-    const rows=d.results||[];
-    if(!rows.length){ if(st)st.textContent='No stored firms match'+(trade?` trade "${trade}"`:'')+(area?` in ${area}`:'')+'.'; log('Database load — 0 rows matched your trade/area.','wn'); return; }
+    // With several areas asked for, the trade is fetched once and filtered here — one request rather than
+    // fourteen, and the server only ever filters on a single area.
+    let rows=d.results||[];
+    if(areaList.length>1){
+      const want=new Set(areaList);
+      const all=rows.length;
+      rows=rows.filter(o=>want.has(String(o.area||'').toUpperCase()));
+      log(`Database load — ${all} stored for "${trade}", ${rows.length} in the ${areaList.length} area(s) you asked for.`);
+    }
+    if(!rows.length){
+      const avail=[...new Set((d.results||[]).map(o=>o.area))].sort();
+      if(st)st.textContent='No stored firms match'+(trade?` trade "${trade}"`:'')+(area?` in ${area}`:'')+'.';
+      log('Database load — 0 rows matched.'+(avail.length?` "${trade}" IS stored in: ${avail.slice(0,20).join(', ')}${avail.length>20?'…':''}`:''),'wn');
+      return;
+    }
     const esc=v=>{v=(v==null?'':String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
     const H=['COMPANY','CATEGORY','AREA','DISTRICT','POSTCODE','ADDRESS','WEBSITE','PHONE','EMAIL','COMPANY_NO','NOTES','SOURCE'];
     const csv=H.join(',')+'\n'+rows.map(o=>[o.name,o.trade||o.category||trade||'Supplier',o.area,o.district,o.postcode,o.address,o.website,o.phone,o.email,o.company_number,o.notes,o.source].map(esc).join(',')).join('\n');
