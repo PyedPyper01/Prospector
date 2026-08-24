@@ -2443,18 +2443,23 @@ async function enrichAll(){
    const still=LEADS.filter(l=>!l.website).length; if(still)log(`${still} firm(s) still have no website on record — can't crawl those for an email.`,'wn');
    render();setStats();}
   const todo=LEADS.filter(l=>!l.enriched);
-  log(`Enriching ${todo.length} leads (website crawl + Companies House${localStorage.getItem('pp_Hunter')?' + Hunter':''})…`,'ok');
+  log(`Enriching ${todo.length} leads, 12 at a time (website crawl + Companies House${localStorage.getItem('pp_Hunter')?' + Hunter':''})…`,'ok');
   let done=0;
   const worker=async()=>{
     while(todo.length){
       const l=todo.shift();
       try{ await enrichLead(l); done++;
-        if(done%5===0||!todo.length){$('bar').style.width=Math.round(done/(done+todo.length)*100)+'%';setStats();render();}
+        if(done%10===0||!todo.length){$('bar').style.width=Math.round(done/(done+todo.length)*100)+'%';setStats();render();
+          if(done%50===0)log(`  enriched ${done} of ${done+todo.length}…`);}
       }catch(e){l.enriched=true;}
-      await new Promise(r=>setTimeout(r,180));  // gentle pacing so bulk crawling doesn't trip site rate-limits
+      await new Promise(r=>setTimeout(r,120));  // pacing per WORKER; each firm is a different site, so this is
+                                                // politeness rather than a rate limit on any one host
     }
   };
-  await Promise.all([worker(),worker(),worker(),worker(),worker(),worker()]);  // 6 parallel crawlers (was 2) — cuts full-batch enrich time ~3×; per-firm pacing keeps it polite
+  // 12 crawlers, up from 6. Enrich is almost entirely waiting on other people's web servers, and each firm is
+  // a different host — the background contact crawl ran 16 at once across 30,000 sites without trouble.
+  const CRAWLERS=12;
+  await Promise.all(Array.from({length:CRAWLERS},()=>worker()));
   // Data-clean before merging: drop a stray chain email off an independent so it can't fuse chain branches
   // in. NO exclusion verdict here — that's decided ONCE per company after the final merge.
   {const c=scrubChainEmails(); if(c)log(`Scrubbed a stray chain email off ${c} independent row(s) (pre-merge data clean).`,'wn');}
