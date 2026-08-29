@@ -68,7 +68,18 @@ exports.handler = async (event) => {
 
     // 5. verdict
     out.registerUrl = `https://register.fca.org.uk/s/firm?id=${frn}`;
-    if (/appointed representative/i.test(status)) out.verdict = "APPOINTED REPRESENTATIVE (tied — not independent)";
+    // Appointed Representative status is a ROUTE TO AUTHORISATION, not a verdict on independence. Plenty of
+    // independently owned local IFA firms are ARs of a network (ValidPath, Sense, Best Practice) purely to
+    // avoid the cost of direct FCA permissions — they still give whole-of-market advice and are owned by the
+    // people who run them. Calling every AR "tied — not independent" wrongly rejected those firms.
+    // What actually matters is (a) independent vs RESTRICTED advice, and (b) who owns the firm. The
+    // restricted networks whose ARs trade under the parent brand are caught by isNetwork below.
+    if (/appointed representative/i.test(status)) {
+      out.appointedRep = true;
+      out.verdict = out.isNetwork
+        ? "APPOINTED REPRESENTATIVE of a restricted network"
+        : "APPOINTED REPRESENTATIVE (authorisation route — judge independence on ownership and advice type)";
+    }
     else if (!/authorised|registered/i.test(status)) out.verdict = "NOT AUTHORISED (" + status + ")";
     else if (out.isNetwork) out.verdict = "RESTRICTED / NETWORK";
     else if (out.hasInvestmentAdvice) out.verdict = out.hasPensionTransfer ? "IFA (investment + pension advice)" : "IFA (investment advice)";

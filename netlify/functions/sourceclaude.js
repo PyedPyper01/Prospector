@@ -46,7 +46,7 @@ exports.handler = async (event) => {
 
 Hard rules — apply strictly:
 - UNITED KINGDOM only. The firm's OWN registered/office address postcode must start with "${area}" (i.e. ${area}1, ${area}2, …). Reject anything overseas, and reject firms whose office is actually in a different UK postcode area even if they say they "serve" this area.
-- INDEPENDENT only. Reject national chains, franchises, brokerages that are consolidators, and any firm that is an APPOINTED REPRESENTATIVE or tied agent of a larger network/principal. If a firm's own site or the FCA register says it is an appointed representative of another company, EXCLUDE it.
+- INDEPENDENT only. Reject national chains, franchises and consolidators. Reject a firm that trades under a RESTRICTED national brand (St James's Place Partner Practice, NFU Mutual agent) or is a tied agent selling one provider's products. Do NOT reject a firm merely for being an Appointed Representative: for advice firms that is usually just how a small independent gets FCA authorisation, and for funeral directors it is required in order to sell pre-paid plans. Independence is about OWNERSHIP and whether the advice is whole-of-market — not about the AR label.
 - Must have its OWN website (a real firm site, not just a directory listing, Facebook page, or an aggregator profile).
 
 Use web_search (at most ${maxUses} searches) to find candidates and verify their location. A single search like "${trade} ${town} ${area}" typically returns many firms at once — mine each results page for multiple firms rather than one search per firm. After your searches, STOP searching and write the answer.
