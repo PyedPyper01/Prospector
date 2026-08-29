@@ -98,6 +98,16 @@ Return, for each firm, a strict JSON object. Assess:
    A register-verified firm with no website should be scored on its membership + reviews and can APPROVE — it must NOT be pushed down to RESERVE merely for lacking a website. In that case set description to "NO_CONTENT" (no rich profile is possible without site facts); that does NOT lower the verdict.
 
 4. VERDICT — one of APPROVE, REVIEW, RESERVE, EXCLUDE (do NOT output CHECK-PSC; the caller sets that from Companies House data).
+   · FOR FINANCIAL-ADVICE CATEGORIES ONLY (IFAs, pension/investment advisers, equity release, wealth
+     management) there is a SECOND exclusion: RESTRICTED ADVICE. UK firms must state on their own site
+     whether their advice is "independent" (whole of market) or "restricted". A restricted firm advises on
+     a limited panel, so it does not belong in an independent-adviser listing even when it is independently
+     OWNED — an SJP Partner Practice is its own business but sells only SJP products. Set restricted=true
+     and EXCLUDE where the site says "restricted advice", or the firm is a St James's Place Partner
+     Practice, an M&G / Prudential adviser, Schroders Personal Wealth, an NFU Mutual agent, or an adviser
+     of Openwork, Quilter, Intrinsic or True Potential. Being an Appointed Representative is NOT restricted
+     advice: many independently owned whole-of-market firms are ARs of a network purely to hold FCA
+     authorisation. Judge the ADVICE, not the authorisation route.
    · EXCLUDE — independent=false with a group_quote, OR clearly the WRONG TRADE: a DIFFERENT trade than the searched category (e.g. a hardware shop or auto/car-key specialist when "locksmith" was searched, a garden centre when "florist" was searched). Do NOT exclude a firm merely for not being deathcare-related — if it IS the searched trade, it is on-trade.
    · APPROVE — independent (true or null-but-no-red-flags) AND fit>=6 AND quality>=5 AND a genuine, useful independent of the searched trade.
    · REVIEW  — promising but something needs a human eye (independence unclear, mid scores, register flagged).
