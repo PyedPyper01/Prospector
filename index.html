@@ -815,7 +815,9 @@ function setStats(){$('sKept').textContent=LEADS.length;$('sExcl').textContent=E
   $('exportBrevo').disabled=!LEADS.some(l=>l.emails);$('enrichBtn').disabled=!has||running;
   const vb=$('vetBtn');if(vb)vb.disabled=!has||running;
   const vetted=LEADS.some(l=>l.alVerdict);
-  const rc=$('rankedCsvBtn');if(rc)rc.disabled=!vetted;
+  // Enabled whenever there are rows. Gating it on vetting meant a grid loaded from the database had the
+  // button greyed out with no explanation — it looked broken rather than conditional.
+  const rc=$('rankedCsvBtn');if(rc)rc.disabled=!LEADS.length;
   updateSelCount();}
 
 /* ---------- shared candidate POOL (single-area AND region sweeps use the same merge/dedupe) ---------- */
@@ -3517,9 +3519,15 @@ function copyNoEmail(){
   else fallback();
 }
 function exportRanked(){
-  if(!LEADS.some(l=>l.alVerdict)){log('Run ⚖ Vet & Rank first — the ranked CSV needs verdicts.','er');return;}
+  if(!LEADS.length){log('Nothing in the grid to export.','er');return;}
+  // Vetting is not required. Un-vetted rows export with the AL_ columns blank, ordered by how complete the
+  // contact details are — a firm with an email, phone and postcode ahead of a bare name, which is the only
+  // signal there is before vetting.
+  const vetted=LEADS.some(l=>l.alVerdict);
   const COLS=['AL_PRIORITY',...BREVO_COLS,'AL_VERDICT','AL_BATCH','AL_STATUS','AL_FIT','AL_QUALITY','AL_SOURCES','AL_NOTES','AL_DESCRIPTION'];
-  const ordered=[...LEADS].sort((a,b)=>rankVal(a)-rankVal(b));
+  const completeness=l=>-(((l.emails||'').trim()?2:0)+((l.phone||'').trim()?1:0)+((l.postcode||'').trim()?1:0));
+  const ordered=[...LEADS].sort(vetted?((a,b)=>rankVal(a)-rankVal(b))
+                                     :((a,b)=>completeness(a)-completeness(b)||String(a.name||'').localeCompare(String(b.name||''))));
   const rows=ordered.map(l=>Object.assign({AL_PRIORITY:l.alPriority??'-'},brevoRow(l),{
     AL_VERDICT:l.alVerdict||'',AL_BATCH:l.alBatch||AL_BATCH_ID,AL_STATUS:l.alStatus||'',
     AL_FIT:l.alFit??'',AL_QUALITY:l.alQuality??'',AL_SOURCES:(l.sources||[]).join('+')+(l.memberships?(' ['+l.memberships+']'):''),
@@ -3528,7 +3536,9 @@ function exportRanked(){
   const csv=[COLS.join(','),...rows.map(r=>COLS.map(c=>esc(r[c]??'')).join(','))].join('\n');
   dl(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}),`afterlife_ranked_${($('area').value||$('town').value||'leads')}_${Date.now()}.csv`);
   const keep=LEADS.filter(l=>l.alVerdict&&l.alVerdict!=='EXCLUDE').length,exc=LEADS.filter(l=>l.alVerdict==='EXCLUDE').length;
-  log(`Ranked CSV exported — ${rows.length} rows (${keep} ranked keepers top-down, ${exc} excluded kept at the bottom with reasons).`,'ok');
+  log(vetted
+    ? `Ranked CSV exported — ${rows.length} rows (${keep} ranked keepers top-down, ${exc} excluded kept at the bottom with reasons).`
+    : `CSV exported — ${rows.length} rows, ordered by how complete the contact details are. These rows have NOT been vetted, so the AL_ columns are blank; run ⚖ Vet & Rank first if you want verdicts and write-ups.`,'ok');
 }
 /* ---------- publish APPROVE leads to AfterLife (token stays server-side) ---------- */
 async function publishAfterLife(){
