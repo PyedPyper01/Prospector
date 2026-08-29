@@ -34,7 +34,8 @@ exports.handler = async (event) => {
       // areas[] is the source of truth for a Regional/National firm (it holds several postcode
       // areas); `area` is kept as the primary for legacy readers. AfterLife's importer accepts both.
       areas: (Array.isArray(l.areas) ? l.areas : (l.area ? [l.area] : []))
-        .map(a => String(a).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2)).filter(Boolean),
+        .map(a => String(a).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))
+        .filter(a => a && EW.has(a)),
       area: String((Array.isArray(l.areas) && l.areas[0]) || l.area || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2),
       // Derived here as well as sent, so a caller that forgets the flag still cannot publish a firm covering
       // eighty areas as "Local". areaCount travels with it so the marketplace need not recount.

@@ -1049,9 +1049,14 @@ async function districtResults(term,d,town,townMode){
    is there (Colchester: 13 florists one way, 44 this way).
    Three gates before anything is stored — Google's own category must match the trade, the postcode area must
    match the one asked for, and there must be a website. */
-const ALL_AREAS = ('AL B BA BB BD BH BL BN BR BS CA CB CF CH CM CO CR CT CV CW DA DE DH DL DN DT DY E EC EN EX FY GL GU HA '
-  +'HD HG HP HR HU IG IP KT L LA LD LE LL LN LS LU M ME MK N NE NG NN NP NR NW OL OX PE PL PO PR RG RH RM S '
-  +'SA SE SG SK SL SM SN SO SP SR SS ST SW SY TA TF TN TQ TR TS TW UB W WA WC WD WF WN WR WS WV YO').split(' ');
+// ── SERVICE AREA: England & Wales only. ONE definition, used for sweeps, for the national/tier
+// derivation and as the publish gate. AfterLife's store had picked up 124 areas including AB, BT, EH, G,
+// IM, JE and the rest of Scotland, Northern Ireland and the Crown dependencies — outside the service area
+// and not sellable. Anything not on this list never publishes.
+const EW_AREAS = ('AL B BA BB BD BH BL BN BR BS CA CB CF CH CM CO CR CT CV CW DA DE DH DL DN DT DY E EC EN EX FY GL GU HA HD HG HP HR HU HX IG IP KT L LA LD LE LL LN LS LU M ME MK N NE NG NN NP NR NW OL OX PE PL PO PR RG RH RM S SA SE SG SK SL SM SN SO SP SR SS ST SW SY TA TD TF TN TQ TR TS TW UB W WA WC WD WF WN WR WS WV YO').split(' ');   // the canonical 105 — England & Wales service area
+const EW_SET = new Set(EW_AREAS);
+const ALL_AREAS = EW_AREAS;                       // sweeps run over exactly the service area
+const inServiceArea = a => EW_SET.has(String(a || '').toUpperCase().replace(/[^A-Z]/g, ''));
 let MAPS = { rows: [], stop: false, cfg: null };
 
 async function mapsConfig(){
@@ -3148,26 +3153,35 @@ async function vetRank(){
        // 26s budget. The gateway then returns an HTML error page and r.json() throws Safari's opaque "string
        // did not match the expected pattern". Smaller batches stay inside the budget; the response is read as
        // TEXT first so a non-JSON body is reported honestly instead of crashing the loop.
-       const WBATCH=6;
-       for(let i=0;i<items.length;i+=WBATCH){const batch=items.slice(i,i+WBATCH);
-         let d=null;
-         for(let attempt=1;attempt<=2&&!d;attempt++){
+       // Six per call keeps each inside the 26s budget, but 1,170 firms is 195 calls: run one after another
+       // that is roughly fifty minutes with nothing on screen, which reads as a hang. Four at a time, and a
+       // progress line, so it is visibly working.
+       const WBATCH=6, wb=[];
+       for(let i=0;i<items.length;i+=WBATCH) wb.push(items.slice(i,i+WBATCH));
+       let wDone=0, wFail=0, wStop=false;
+       const doBatch=async(batch,bi)=>{
+         for(let attempt=1;attempt<=2&&!wStop;attempt++){
            try{
              const r=await fetch('/.netlify/functions/describe',{method:'POST',body:JSON.stringify({
                request:label, items:batch.map(l=>({name:l.name,website:l.website,rating:l.rating,reviews:l.reviews,credentials:l.alCredentials||'',memberships:l.memberships||'',register:l.register||'',siteText:(l.siteText||'').slice(0,1200)})),
                anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
              const txt=await r.text();
-             try{ d=JSON.parse(txt); }
-             catch(pe){ throw new Error(r.ok?('unreadable reply: '+txt.slice(0,80)):('HTTP '+r.status+' — the write-up call timed out')); }
-           }catch(e){
-             if(attempt<2){ await new Promise(r2=>setTimeout(r2,3000)); }
-             else log(`Write-up batch ${Math.floor(i/WBATCH)+1} failed — ${e.message}. Those firms publish without copy; you can edit it in AfterLife.`,'wn');
-           }
+             let d=null; try{ d=JSON.parse(txt); }catch(pe){ d=null; }
+             if(!d){ if(attempt<2){await new Promise(r2=>setTimeout(r2,2500)); continue;}
+               log(`Write-up batch ${bi+1}/${wb.length} failed — ${r.ok?'unreadable reply':'HTTP '+r.status+', the call timed out'}. Those ${batch.length} publish without copy.`,'wn');
+               wFail+=batch.length; return; }
+             if(d.skipped){ if(!wStop)log('Manual write-up unavailable'+(d.error?' ('+d.error+')':'')+' — they still publish; edit copy in AfterLife.','wn'); wStop=true; return; }
+             (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;if(v.description)l.alDescription=v.description;if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
+             wDone+=batch.length;
+             if(wDone%60<WBATCH) log(`  written up ${wDone} of ${items.length}…`);
+             return;
+           }catch(e){ if(attempt>=2){log(`Write-up batch ${bi+1}/${wb.length} failed — ${e.message}.`,'wn'); wFail+=batch.length; return;} }
          }
-         if(!d)continue;
-         if(d.skipped){log('Manual write-up unavailable'+(d.error?' ('+d.error+')':'')+' — they still publish; copy is written at publish time or edit it in AfterLife.','wn');break;}
-         (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;if(v.description)l.alDescription=v.description;if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
-       }
+       };
+       let wi=0;
+       const wWorker=async()=>{ while(wi<wb.length&&!wStop){ const k=wi++; await doBatch(wb[k],k); } };
+       await Promise.all([wWorker(),wWorker(),wWorker(),wWorker()]);
+       log(`Write-ups for ${label}: ${wDone} done${wFail?`, ${wFail} without copy`:''}.`, wFail?'wn':'ok');
      }
    }}
   $('bar').style.width='100%';
@@ -3215,11 +3229,13 @@ function firmIdentity(l){
 }
 const areaOf=l=>String(l.batchArea||l.area||'').toUpperCase().replace(/[^A-Z]/g,'');
 function areasOfLead(l){                   // a row collapsed earlier carries its whole footprint already
-  const out=new Set(); const a=areaOf(l); if(a) out.add(a);
-  (l.areasList||[]).forEach(x=>{const v=String(x||'').toUpperCase().replace(/[^A-Z]/g,''); if(v) out.add(v);});
+  const out=new Set(); const a=areaOf(l); if(a&&inServiceArea(a)) out.add(a);
+  (l.areasList||[]).forEach(x=>{const v=String(x||'').toUpperCase().replace(/[^A-Z]/g,'');
+    if(v&&inServiceArea(v)) out.add(v);});
   return out;
 }
-function tierFor(n){ return n>=40?'National':(n>=NATIONAL_AT?'Regional':'Local'); }
+// Derived against the service area, not a UK-wide total: "National" means most of England & Wales.
+function tierFor(n){ return n>=Math.round(EW_AREAS.length*0.4)?'National':(n>=NATIONAL_AT?'Regional':'Local'); }
 
 /* Every firm in a set of rows → its full area footprint. Built once and shared, so the publish record and
    the exported CSV can never disagree about where a firm operates. */
@@ -3673,6 +3689,28 @@ async function publishAfterLife(){
       verified:[primary.register,primary.fca||primary.reg,primary.regStatus].filter(Boolean).join(' · '),
       notes:[primary.alNotes,branches.length>1?('Premises: '+branches.map(b=>[b.area,b.address].filter(Boolean).join(' ')).filter(Boolean).slice(0,12).join(' | ')):''].filter(Boolean).join(' — ')};
   });
+
+  // SERVICE-AREA GATE. Areas outside England & Wales must never reach the marketplace: the store had
+  // accumulated 124 areas including Scotland, Northern Ireland and the Crown dependencies. Filtering here
+  // rather than at the source means it holds however a row arrived — sweep, CSV import or database load.
+  {
+    let trimmed=0, dropped=[];
+    for(const rec of suppliers){
+      const keep=(rec.areas||[]).filter(inServiceArea);
+      if(keep.length!==(rec.areas||[]).length) trimmed++;
+      rec.areas=keep;
+      rec.areaCount=keep.length;
+      rec.national=keep.length>=NATIONAL_AT;
+      rec.tier=rec.tier==='Local'&&keep.length>=NATIONAL_AT?tierFor(keep.length):(keep.length?rec.tier:'Local');
+      if(!inServiceArea(rec.area)) rec.area=keep[0]||'';
+    }
+    const before=suppliers.length;
+    for(let i=suppliers.length-1;i>=0;i--) if(!suppliers[i].areas.length){dropped.push(suppliers[i].name);suppliers.splice(i,1);}
+    if(trimmed||dropped.length)
+      log(`Service area (England & Wales, ${EW_AREAS.length} areas): trimmed out-of-area postcodes from ${trimmed} record(s)`
+        + (dropped.length?`, dropped ${dropped.length} with nothing left (${dropped.slice(0,4).join(', ')}${dropped.length>4?'…':''})`:'')
+        + `. ${suppliers.length} of ${before} will publish.`,'wn');
+  }
 
   // Prove the promise before sending: one record per firm, no id used twice.
   {

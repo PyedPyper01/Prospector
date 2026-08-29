@@ -87,12 +87,13 @@ than duplicating them. There is never a reason to empty it first.
 ## THE AREAS (England & Wales)
 
 ```
-AL B BA BB BD BH BL BN BR BS CA CB CF CH CM CO CR CT CV CW DA DE DH DL DN DT DY E EC EN EX FY GL GU HA
-HD HG HP HR HU IG IP KT L LA LD LE LL LN LS LU M ME MK N NE NG NN NP NR NW OL OX PE PL PO PR RG RH RM S
-SA SE SG SK SL SM SN SO SP SR SS ST SW SY TA TF TN TQ TR TS TW UB W WA WC WD WF WN WR WS WV YO
+AL B BA BB BD BH BL BN BR BS CA CB CF CH CM CO CR CT CV CW DA DE DH DL DN DT DY E EC EN EX
+FY GL GU HA HD HG HP HR HU HX IG IP KT L LA LD LE LL LN LS LU M ME MK N NE NG NN NP NR NW OL
+OX PE PL PO PR RG RH RM S SA SE SG SK SL SM SN SO SP SR SS ST SW SY TA TD TF TN TQ TR TS TW
+UB W WA WC WD WF WN WR WS WV YO
 ```
 
-Skip entirely: `AB DD DG EH FK G HS IV KA KW KY ML PA PH TD ZE BT IM GY JE`
+Skip entirely (outside the service area): `AB DD DG EH FK G HS IV KA KW KY ML PA PH ZE BT IM GY JE`
 
 **London and rural Wales** (`E EC N NW SE SW W WC HA IG KT RM TW UB` and `LD LL`): search by **district name**,
 not postcode letters — "Wimbledon Clapham Putney", "Llandudno Bangor Wrexham". Postcode-letter searches return
