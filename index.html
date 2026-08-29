@@ -90,6 +90,14 @@ tr:hover td{background:#10161e}
 td a{color:var(--info);text-decoration:underline;text-underline-offset:2px}
 td a:hover{text-decoration:underline}
 .b{font-weight:600}
+/* .muted is a grey tuned for the white page. Inside a filled button it lands on a purple or green
+   gradient and all but disappears — the small print on "Top up the rest with Claude" was slate grey on
+   purple. On any coloured button it becomes a translucent white instead, which reads on every gradient
+   used here while still sitting back from the main label. */
+button.primary .muted, button.primary .muted *, .primary .muted {
+  color:#fff !important; opacity:.95; font-weight:500;
+  text-shadow:0 1px 1px rgba(0,0,0,.35);   /* the green gradient is light; the shadow carries the thin strokes */
+}
 .muted{color:var(--dim)}
 .empty{color:var(--mut)}
 .tagx{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.6px;border-radius:5px;padding:2px 7px;text-transform:uppercase}
