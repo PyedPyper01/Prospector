@@ -36,6 +36,10 @@ exports.handler = async (event) => {
       areas: (Array.isArray(l.areas) ? l.areas : (l.area ? [l.area] : []))
         .map(a => String(a).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2)).filter(Boolean),
       area: String((Array.isArray(l.areas) && l.areas[0]) || l.area || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2),
+      // Derived here as well as sent, so a caller that forgets the flag still cannot publish a firm covering
+      // eighty areas as "Local". areaCount travels with it so the marketplace need not recount.
+      areaCount: (Array.isArray(l.areas) ? l.areas.length : (l.area ? 1 : 0)),
+      national: (typeof l.national === "boolean") ? l.national : ((Array.isArray(l.areas) ? l.areas.length : 0) >= 8),
       tier: (["Local", "Regional", "National"].includes(l.tier) ? l.tier : "Local"),
       district: String(l.district || "").toUpperCase().replace(/\s+/g, "").slice(0, 5),
       town: String(l.town || "").slice(0, 120),
@@ -48,6 +52,7 @@ exports.handler = async (event) => {
       _internal: {
         contactEmail: (l.contactEmail || "") || null,
         contactPhone: (l.contactPhone || "") || null,   // carried for staff outreach; public `phone` stays null
+        branches: Array.isArray(l.branches) ? l.branches.slice(0, 40) : [],   // per-area premises, kept when a firm collapses to one record
         companyNo: (l.companyNo || "") || null,
         companyId: (l.companyId || "") || null,
         saif: (l.saif || "") || null,

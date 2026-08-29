@@ -1226,7 +1226,7 @@ async function refreshContactsFromDb(){
    Worse than the clutter, publishing groups by domain+area, so the same firm would publish as 103 separate
    "Local" records sharing one name — and the marketplace slugs them identically, so they overwrite each other
    and the firm ends up visible in a single area. One row carrying all its areas is the correct shape. */
-const NATIONAL_AT = 8;   // a firm in this many areas or more is Regional/National, not a set of branches
+// NATIONAL_AT is defined once with the shared footprint helpers below.
 
 function collapseNationalFirms(){
   if(!LEADS.length){ log('Nothing in the grid to collapse.','wn'); return; }
@@ -3187,9 +3187,55 @@ async function vetRank(){
   }
   running=false;$('run').disabled=false;setStats();render();
 }
+
+/* ---------- ONE RECORD PER FIRM: identity, footprint, tier ----------
+   A business is ONE business however many postcode areas it serves. Publishing a copy per area produced
+   identically-slugged records that overwrite each other on the marketplace, so a firm found in 103 areas
+   ended up visible in one. The store now takes an areas[] list and a national flag, so a firm publishes once
+   carrying its whole footprint.
+   Identity is the WEBSITE first — two rows on the same domain are the same business, whatever the listing
+   called them ("Dillys" / "Dillys Bespoke Florist"). Company number, then email domain, then name are
+   fallbacks for rows with no site. */
+const NATIONAL_AT=8;                       // areas at which a firm stops being local
+function firmIdentity(l){
+  const dom=domainOf(l.website);                     if(dom)  return 'd:'+dom;
+  const ch=(l.companyNo||'').toString().replace(/\s/g,'').toUpperCase(); if(ch) return 'c:'+ch;
+  const edom=emailDomOf({emails:l.emails});          if(edom) return 'm:'+edom;
+  return 'n:'+nameKey(l.name);
+}
+const areaOf=l=>String(l.batchArea||l.area||'').toUpperCase().replace(/[^A-Z]/g,'');
+function areasOfLead(l){                   // a row collapsed earlier carries its whole footprint already
+  const out=new Set(); const a=areaOf(l); if(a) out.add(a);
+  (l.areasList||[]).forEach(x=>{const v=String(x||'').toUpperCase().replace(/[^A-Z]/g,''); if(v) out.add(v);});
+  return out;
+}
+function tierFor(n){ return n>=40?'National':(n>=NATIONAL_AT?'Regional':'Local'); }
+
+/* Every firm in a set of rows → its full area footprint. Built once and shared, so the publish record and
+   the exported CSV can never disagree about where a firm operates. */
+function firmFootprints(rows){
+  const m=new Map();
+  (rows||LEADS||[]).forEach(l=>{
+    const k=firmIdentity(l);
+    if(!m.has(k)) m.set(k,{areas:new Set(),rows:[]});
+    const f=m.get(k); f.rows.push(l);
+    areasOfLead(l).forEach(a=>f.areas.add(a));
+  });
+  return m;
+}
+let _fpIndex=null, _fpToken='';
+function footprintOf(l){                   // cached lookup for per-row export columns
+  const token=(LEADS?LEADS.length:0)+':'+(LEADS&&LEADS[0]?LEADS[0].name:'');
+  if(!_fpIndex||_fpToken!==token){ _fpIndex=firmFootprints(LEADS); _fpToken=token; }
+  const f=_fpIndex.get(firmIdentity(l));
+  const areas=f?[...f.areas].sort():[...areasOfLead(l)].sort();
+  return {areas,count:areas.length,national:areas.length>=NATIONAL_AT,tier:tierFor(areas.length)};
+}
+
 /* ---------- shared Brevo row mapping (used by Brevo export + ranked CSV) ---------- */
-const BREVO_COLS=['EMAIL','FIRSTNAME','LASTNAME','COMPANY','SMS','WEBSITE','ADDRESS','POSTCODE','DISTRICT','POSTCODE_AREA','CATEGORY','RATING','REVIEWS','INDEPENDENT','REGISTER','FCA_STATUS','FRN','COMPANY_NUMBER'];
+const BREVO_COLS=['EMAIL','FIRSTNAME','LASTNAME','COMPANY','SMS','WEBSITE','ADDRESS','POSTCODE','DISTRICT','POSTCODE_AREA','AREAS','AREA_COUNT','NATIONAL','CATEGORY','RATING','REVIEWS','INDEPENDENT','REGISTER','FCA_STATUS','FRN','COMPANY_NUMBER'];
 function brevoRow(l){
+  const fp=footprintOf(l);
   const email=(l.emails||'').split(';')[0].trim();
   const nm=(l.contact||'').trim().split(/\s+/).filter(Boolean);
   let sms=(l.phone||'').replace(/[^0-9+]/g,'');
@@ -3197,7 +3243,10 @@ function brevoRow(l){
   const pc=((l.address||'').toUpperCase().match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/)||[''])[0];
   const term=($('term').value||'').split('\n')[0].trim();
   return {EMAIL:email,FIRSTNAME:nm[0]||'',LASTNAME:nm.length>1?nm.slice(1).join(' '):'',COMPANY:l.name||'',SMS:sms,WEBSITE:l.website||'',
-    ADDRESS:l.address||'',POSTCODE:pc,DISTRICT:l.district||'',POSTCODE_AREA:l.area||'',CATEGORY:term,
+    ADDRESS:l.address||'',POSTCODE:pc,DISTRICT:l.district||'',POSTCODE_AREA:l.area||'',
+    // the firm's WHOLE footprint, so the sales team sees a national operator as one account covering 103
+    // areas rather than as 103 unrelated local leads
+    AREAS:fp.areas.join(';'),AREA_COUNT:fp.count,NATIONAL:fp.national?'YES':'',CATEGORY:term,
     RATING:l.rating??'',REVIEWS:l.reviews||'',INDEPENDENT:l.independent||'',REGISTER:l.register||'',
     FCA_STATUS:l.fca||l.reg||'',FRN:l.frn||'',COMPANY_NUMBER:l.companyNo||''};
 }
@@ -3526,36 +3575,67 @@ async function publishAfterLife(){
   // postcode areas is Regional/National on the marketplace, so it must publish ONCE with an
   // `areas` array covering all of them — otherwise the same name → same slug → the records
   // overwrite each other and the firm shows in only one area. Local firms (one area) stay single.
-  // ONE SLOT PER AREA (matches the register model). Group by firm AND area, so a firm swept in SE, DA and
-  // BR publishes as three records — one per area, each with that area's branch address + phone — sharing a
-  // COMPANY_ID ROOT (slug(name)-<area>). Branches WITHIN an area were already collapsed to one row upstream.
+  // ONE RECORD PER FIRM. Grouping by firm AND area published a copy per area; because the marketplace slugs
+  // on the name, those copies overwrote each other and a firm found in 103 areas ended up visible in one.
+  // The store now takes an areas[] list and a national flag, so each business publishes ONCE carrying its
+  // whole footprint. De-duplication is by website domain (see firmIdentity), which is what actually
+  // identifies a business — two listings on one domain are one company however they were spelled.
   const slugId=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);
-  const firmGroupKey=l=>{const ch=(l.companyNo||'').toString().replace(/\s/g,'').toUpperCase();const dom=domainOf(l.website);const edom=emailDomOf({emails:l.emails});const base=ch?('c:'+ch):dom?('d:'+dom):edom?('m:'+edom):('n:'+nameKey(l.name));return base+'|'+(l.area||'').toUpperCase();};
   const groups=new Map();
-  approve.forEach(l=>{const k=firmGroupKey(l);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l);});
-  const suppliers=[...groups.values()].map(g=>{
+  approve.forEach(l=>{const k=firmIdentity(l);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l);});
+
+  const takenIds=new Map();
+  const suppliers=[...groups.entries()].map(([key,g])=>{
     const primary=g.find(l=>l.alDescription&&l.alDescription.trim())||g.slice().sort((a,b)=>(a.alPriority||99)-(b.alPriority||99))[0]||g[0];
-    const area=(primary.area||'').toUpperCase().replace(/[^A-Z]/g,'');
-    const branches=[].concat(...g.map(l=>l.branches||[]));
-    const gCatId=primary.pubCatId||catId;                                   // per-row category (manual supply) wins; else the picker
+    // the union of every area on every row of this firm, including any collapsed row's stored footprint
+    const areaSet=new Set(); g.forEach(l=>areasOfLead(l).forEach(a=>areaSet.add(a)));
+    const areas=[...areaSet].sort();
+    const area=areaOf(primary)||areas[0]||'';
+    const tier=primary.alTier||tierFor(areas.length);
+    const national=areas.length>=NATIONAL_AT;
+
+    // Keep each area's own premises rather than losing them to the one surviving row.
+    const seenB=new Set(); const branches=[];
+    g.forEach(l=>{const a=areaOf(l); const addr=(l.address||'').trim();
+      const bk=a+'|'+addr; if(!addr&&!a) return; if(seenB.has(bk)) return; seenB.add(bk);
+      branches.push({area:a,address:addr,postcode:l.postcode||'',phone:l.phone||''});});
+    (primary.branches||[]).forEach(b=>{const bk=(b.area||'')+'|'+(b.address||''); if(!seenB.has(bk)){seenB.add(bk);branches.push(b);}});
+
+    // One id per FIRM now, so a name shared by two different businesses would collide where the old
+    // area suffix used to separate them. Disambiguate with the domain, then a counter.
+    let id=slugId(primary.name)||'firm';
+    if(takenIds.has(id)&&takenIds.get(id)!==key){
+      const root=(domainOf(primary.website)||'').split('.')[0];
+      const alt=root?(id+'-'+slugId(root).slice(0,14)):id;
+      id=(takenIds.has(alt)&&takenIds.get(alt)!==key)?(alt+'-'+(takenIds.size+1)):alt;
+    }
+    takenIds.set(id,key);
+
+    const gCatId=primary.pubCatId||catId;
     const gCatLabel=primary.pubCatLabel||(AL_CATEGORIES.find(c=>c.id===gCatId)||{}).label||catLabel;
-    return {id:(slugId(primary.name)+'-'+(area||'xx').toLowerCase()),      // shared root, area suffix → one slot per area
+    return {id,
       name:primary.name,category:gCatId,categoryLabel:gCatLabel,
-      // A collapsed national firm carries every area it covers; publishing it once under all of them keeps
-      // one marketplace record instead of N identically-slugged records that overwrite each other.
-      areas: (primary.areasList && primary.areasList.length ? primary.areasList : [area]),
-      area, tier: (primary.alTier || 'Local'),
+      areas, area, areaCount:areas.length, national, tier,
       district:primary.district||'',town,address:primary.address||'',website:primary.website||'',
       credentials:(primary.alCredentials||'').split(/[,;]/).map(s=>s.trim()).filter(Boolean),
       description:primary.alDescription||'',priority:typeof primary.alPriority==='number'?primary.alPriority:99,
       contactEmail:(primary.emails||'').split(';')[0].trim(),contactPhone:primary.phone||'',companyNo:primary.companyNo||'',
+      branches,
       verified:[primary.register,primary.fca||primary.reg,primary.regStatus].filter(Boolean).join(' · '),
-      notes:[primary.alNotes,branches.length>1?('Branches: '+branches.map(b=>b.address||b.postcode).filter(Boolean).slice(0,12).join(' | ')):''].filter(Boolean).join(' — ')};
+      notes:[primary.alNotes,branches.length>1?('Premises: '+branches.map(b=>[b.area,b.address].filter(Boolean).join(' ')).filter(Boolean).slice(0,12).join(' | ')):''].filter(Boolean).join(' — ')};
   });
-  const rootAreas={}; suppliers.forEach(s=>{const root=s.id.replace(/-[a-z0-9]+$/,'');(rootAreas[root]=rootAreas[root]||new Set()).add(s.area);});
-  const multi=Object.entries(rootAreas).filter(([r,as])=>as.size>1);
-  if(multi.length)log(`${multi.length} multi-area firm(s) publishing as ONE SLOT PER AREA (shared COMPANY_ID root): `+multi.slice(0,6).map(([r,as])=>`${r} [${[...as].sort().join(',')}]`).join('; '),'ok');
-  log(`Publishing ${suppliers.length} supplier record(s) to AfterLife (one per firm per area)…`,'wn');
+
+  // Prove the promise before sending: one record per firm, no id used twice.
+  {
+    const ids=suppliers.map(x=>x.id);
+    const dupIds=ids.filter((v,i)=>ids.indexOf(v)!==i);
+    if(dupIds.length){log(`❌ ABORTED — ${dupIds.length} duplicate record id(s) (${[...new Set(dupIds)].slice(0,5).join(', ')}). Nothing sent; report this.`,'er');running=false;$('publishBtn').disabled=false;return;}
+    const collapsed=approve.length-suppliers.length;
+    const nat=suppliers.filter(x=>x.national);
+    if(collapsed>0)log(`Collapsed ${approve.length} ticked row(s) into ${suppliers.length} firm(s) — ${collapsed} per-area duplicate(s) merged away.`,'ok');
+    if(nat.length)log(`${nat.length} firm(s) publish as ${nat[0].tier==='National'?'National/Regional':'multi-area'}: `+nat.slice(0,6).map(x=>`${x.name} [${x.areaCount} areas]`).join('; '),'ok');
+  }
+  log(`Publishing ${suppliers.length} supplier record(s) to AfterLife — one per firm, each carrying every area it covers…`,'wn');
   // Send in CHUNKS. One big request makes AfterLife's importer exceed its function timeout and the
   // gateway returns a 502 with nothing imported — a whole batch lost. Chunking keeps each request
   // well inside the limit, and a failure now costs only that chunk: everything before it is already in.
