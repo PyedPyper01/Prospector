@@ -3563,19 +3563,50 @@ async function publishAfterLife(){
   const needCopy=approve.filter(l=>!(l.alDescription&&l.alDescription.trim()));
   if(needCopy.length){
     log(`Writing up ${needCopy.length} of your ${approve.length} pick(s) before sending…`,'wn');
-    const wbatches=[];for(let i=0;i<needCopy.length;i+=25)wbatches.push(needCopy.slice(i,i+25));
-    for(const batch of wbatches){
-      try{
-        const r=await fetch('/.netlify/functions/describe',{method:'POST',body:JSON.stringify({
-          request:($('term').value||'').split('\n').join(' ').slice(0,400),
-          items:batch.map(l=>({name:l.name,website:l.website,rating:l.rating,reviews:l.reviews,
-            credentials:l.alCredentials||'',memberships:l.memberships||'',register:l.register||'',siteText:l.siteText||''})),
-          anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
-        const d=await r.json();
-        if(d.skipped){log('Write-up unavailable'+(d.error?' ('+d.error+')':'')+' — sending your picks with whatever copy exists; you can edit it in AfterLife.','wn');break;}
-        (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;if(v.description)l.alDescription=v.description;if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
-      }catch(e){log('Write-up batch failed — '+e.message+'. Sending with existing copy.','wn');}
-    }
+    // 25 per call with full site text overruns the function's 26s budget and returns a 504 HTML page.
+    // Six is the size that completes — the same number the enrichment write-up path already uses.
+    const WB=6, wbatches=[];
+    for(let i=0;i<needCopy.length;i+=WB)wbatches.push(needCopy.slice(i,i+WB));
+    let wOk=0, wFail=0, stopAll=false;
+
+    const runBatch=async(batch)=>{
+      for(let attempt=1;attempt<=2&&!stopAll;attempt++){
+        try{
+          const r=await fetch('/.netlify/functions/describe',{method:'POST',body:JSON.stringify({
+            request:($('term').value||'').split('\n').join(' ').slice(0,400),
+            items:batch.map(l=>({name:l.name,website:l.website,rating:l.rating,reviews:l.reviews,
+              credentials:l.alCredentials||'',memberships:l.memberships||'',register:l.register||'',siteText:l.siteText||''})),
+            anthropicKey:localStorage.getItem('pp_Anthropic')||undefined})});
+          // Read as TEXT first. Calling .json() on a 504 gives "The string did not match the expected
+          // pattern", which says nothing about what actually went wrong.
+          const txt=await r.text();
+          let d=null; try{ d=JSON.parse(txt); }catch(e){ d=null; }
+          if(!d){
+            const clue=/timeout/i.test(txt)?'the write-up call timed out':`HTTP ${r.status}`;
+            if(attempt<2) continue;
+            log(`Write-up batch failed — ${clue}. Those ${batch.length} firm(s) keep their existing copy.`,'wn');
+            wFail+=batch.length; return;
+          }
+          if(d.skipped){
+            if(!stopAll)log('Write-up unavailable'+(d.error?' ('+d.error+')':'')+' — sending your picks with whatever copy exists; you can edit it in AfterLife.','wn');
+            stopAll=true; return;
+          }
+          (d.results||[]).forEach(v=>{const l=batch[v.i];if(!l)return;
+            if(v.description)l.alDescription=v.description;
+            if(v.credentials&&!l.alCredentials)l.alCredentials=v.credentials;});
+          wOk+=batch.length; return;
+        }catch(e){
+          if(attempt>=2){log(`Write-up batch failed — ${e.message}. Those ${batch.length} firm(s) keep their existing copy.`,'wn');wFail+=batch.length;return;}
+        }
+      }
+    };
+
+    // four in flight; each is its own invocation, so this shortens the wait without lengthening any call
+    let wi=0;
+    const wWorker=async()=>{ while(wi<wbatches.length&&!stopAll){ const b=wbatches[wi++]; await runBatch(b);
+      if(wOk&&wOk%60===0)log(`  written up ${wOk} of ${needCopy.length}…`); } };
+    await Promise.all([wWorker(),wWorker(),wWorker(),wWorker()]);
+    log(`Write-ups: ${wOk} done${wFail?`, ${wFail} kept existing copy`:''}.`, wFail?'wn':'ok');
     render();
   }
   const town=($('town').value||'').trim();

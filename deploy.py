@@ -41,9 +41,37 @@ def req(method, path, data=None, ctype="application/json", raw=False):
     r.add_header("Authorization", "Bearer " + TOK)
     if body is not None:
         r.add_header("Content-Type", ctype)
-    with urllib.request.urlopen(r, context=CTX, timeout=180) as resp:
-        txt = resp.read()
-        return resp.status, (json.loads(txt) if txt and not raw else txt)
+    try:
+        with urllib.request.urlopen(r, context=CTX, timeout=180) as resp:
+            txt = resp.read()
+            return resp.status, (json.loads(txt) if txt and not raw else txt)
+    except urllib.error.HTTPError as e:
+        # Netlify explains a rejection in the BODY. Letting the HTTPError propagate threw a stack trace that
+        # named urllib and not the file it choked on, which is useless for fixing it.
+        body = ""
+        try: body = e.read().decode("utf-8", "ignore")[:300]
+        except Exception: pass
+        raise RuntimeError(f"{method} {url.split('/')[-1]} -> HTTP {e.code}: {body}") from None
+
+
+
+def zip_one(path, arcname):
+    """Zip one file, reading its bytes explicitly and checking what came out.
+
+    zipfile.write(path) was intermittently producing a 122-byte archive holding an EMPTY entry for a file
+    that is 13KB on disk — a different function each run. Netlify rejected those with "must be a non-empty
+    zip", which was accurate and looked like a Netlify fault. Reading the bytes and using writestr is
+    deterministic, and the check below turns a silent bad upload into a stop."""
+    data = open(path, "rb").read()
+    if not data:
+        sys.exit(f"{path} is empty on disk — refusing to deploy it")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(arcname, data)
+    blob = buf.getvalue()
+    if zipfile.ZipFile(io.BytesIO(blob)).getinfo(arcname).file_size != len(data):
+        sys.exit(f"zip of {arcname} did not round-trip — refusing to upload a corrupt bundle")
+    return blob
 
 
 def sha1(b):
@@ -83,10 +111,7 @@ def main():
             if not fn.endswith(".js"):
                 continue
             name = fn[:-3]
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-                z.write(os.path.join(fdir, fn), arcname=fn)
-            zips[name] = buf.getvalue()
+            zips[name] = zip_one(os.path.join(fdir, fn), fn)
             fn_manifest[name] = sha256(zips[name])
 
     print(f"files {len(manifest)} · functions {len(fn_manifest)}"
@@ -107,10 +132,7 @@ def main():
         for fn in sorted(os.listdir(fdir)):
             if not fn.endswith(".js"):
                 continue
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-                z.write(os.path.join(fdir, fn), arcname=fn)
-            zips[fn[:-3]] = buf.getvalue()
+            zips[fn[:-3]] = zip_one(os.path.join(fdir, fn), fn)
     print(f"deploy {dep['id']} · required files {len(need_files)} · required functions {len(need_fns)}")
 
     if manifest["/index.html"] in need_files:
@@ -124,9 +146,22 @@ def main():
             print(f"  {name} → {s}")
     for name, blob in zips.items():
         if sha256(blob) in need_fns:
-            s, _ = req("PUT", f"{API}/deploys/{dep['id']}/functions/{name}?runtime=js", blob,
-                       "application/octet-stream", raw=True)
-            print(f"  fn {name} → {s}")
+            # Netlify intermittently rejects an upload with "must be a non-empty zip" — a different function
+            # each run, though every zip is valid on disk. Treat it as transient: prove the payload locally,
+            # then retry rather than abandoning the whole deploy on one bad round trip.
+            if not blob or len(blob) < 100:
+                sys.exit(f"refusing to upload {name}: zip is {len(blob)} bytes")
+            for attempt in range(1, 5):
+                try:
+                    st, _ = req("PUT", f"{API}/deploys/{dep['id']}/functions/{name}?runtime=js", blob,
+                                "application/zip", raw=True)
+                    print(f"  fn {name} → {st}")
+                    break
+                except RuntimeError as e:
+                    if attempt == 4:
+                        print(f"  fn {name} ({len(blob)}b) → FAILED after 4 tries: {e}")
+                        raise
+                    time.sleep(2 * attempt)
 
     for i in range(60):
         time.sleep(3)
