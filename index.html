@@ -2047,6 +2047,20 @@ async function loadFromDatabase(){
       log('Database load — enter a Trade name (e.g. "Florists") or an Area. Loading every trade at once exceeds what the server can return in one response.','er');
       return;
     }
+    // Loading ADDS to the grid. Pulling locksmiths and then florists therefore leaves both mixed together,
+    // sorted by area so they interleave and look like one list — and one Trade box cannot then describe it.
+    // Ask, rather than silently merging two trades.
+    {
+      const here=[...new Set(LEADS.map(l=>(l.pubCatLabel||l.batchCategory||l.trade||'').trim()).filter(Boolean))];
+      const other=here.filter(t=>t.toLowerCase()!==trade.toLowerCase());
+      if(LEADS.length && other.length){
+        const wipe=confirm(`The grid already holds ${LEADS.length} row(s) of: ${other.slice(0,4).join(', ')}.\n\n`
+          +`OK  = clear the grid and load "${trade}" on its own (recommended)\n`
+          +`Cancel = keep what is there and add "${trade}" to it`);
+        if(wipe){ LEADS=[]; DROPPED=[]; EXCLUDED=0; render(); log('Cleared the grid before loading — one trade at a time.','ok'); }
+        else log(`Adding "${trade}" to a grid that already holds ${other.join(', ')}. Each row keeps its own trade on save.`,'wn');
+      }
+    }
     const body={action:'get',limit:20000}; if(trade)body.trade=trade;
     if(areaList.length===1) body.area=areaList[0];
     const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -2116,11 +2130,24 @@ async function saveGridToDatabase(){
   if(!trade){ if(st)st.textContent='Fill in the Trade box above first — it becomes the category on every row.'; log('Save to database — set the Trade box first (use the exact marketplace category name).','er'); return; }
   // Leaving the tag blank is fine — stamp today's date so a bad batch can still be found and removed later.
   const srcTag = tag || ('manual-' + new Date().toISOString().slice(0,10));
+  // A mixed grid is the dangerous case: one Trade box cannot describe it.
+  {
+    const kinds=[...new Set(LEADS.map(l=>(l.pubCatLabel||l.batchCategory||l.trade||'').trim()).filter(Boolean))];
+    if(kinds.length>1){
+      if(!confirm(`This grid holds ${kinds.length} different trades:\n\n${kinds.slice(0,8).join('\n')}\n\n`
+        +`Each row will be saved under ITS OWN trade, not "${trade}". Continue?`)) { if(st)st.textContent='Save cancelled.'; return; }
+      log(`Grid holds ${kinds.length} trades — each row saves under its own: ${kinds.slice(0,6).join(', ')}.`,'wn');
+    }
+  }
   const seen=new Set(); const rows=[]; let noArea=0;
   for(const l of LEADS){
     const area=String(l.area||'').toUpperCase().replace(/[^A-Z]/g,'');
     if(!l.name||!area){ noArea++; continue; }
     const k=nameKey(l.name)+'|'+area; if(seen.has(k))continue; seen.add(k);
+    // A row that arrived with its own trade keeps it. The Trade box applies only to rows that have none —
+    // otherwise loading locksmiths, then loading florists into the same grid and pressing Save relabels
+    // every locksmith as a florist, which is silent, wholesale corruption of the store.
+    const rowTrade = (l.pubCatLabel || l.batchCategory || l.trade || '').trim() || trade;
     let em=''; try{ em=(typeof emailsOf==='function')?emailsOf(l).join('; '):(l.emails||''); }catch(e){ em=l.emails||''; }
     // NEVER clobber a row that came FROM the database. Loading a trade, then pressing Save, used to rewrite
     // every row's source and notes with this run's tag — destroying curated accreditation flags like
@@ -2135,7 +2162,7 @@ async function saveGridToDatabase(){
     // longer displays. Sending null for those and upserting wrote the gaps back over good data: a save of
     // 1,880 enriched locksmiths put zero phones into the store, erasing the 98% that the Maps sweep had
     // captured. `merge` touches only the keys present, so a save can add and improve but never erase.
-    const row = { name:l.name, trade, area,
+    const row = { name:l.name, trade: rowTrade, area,
       source: wasStored ? origSource : srcTag,
       status:'verified',
       notes: (wasStored && origNotes) ? origNotes : (l.alNotes||l.excludeReason||null) };
@@ -3433,7 +3460,11 @@ function crmRow(l,vetted){
     companyNo:l.companyNo||'', placeId:l.placeId||'',
     sources:(l.sources||[]).join('+')+(l.memberships?(' ['+l.memberships+']'):''),
     priority:l.alPriority??'', verdict:l.alVerdict||'', batch:l.alBatch||AL_BATCH_ID||'',
-    AL_STATUS:l.alStatus||'', fit:l.alFit??'', quality:l.alQuality??'',
+    // Only claim "invited" when AfterLife confirmed the import in this session. Rows vetted before that
+    // rule existed still carry alStatus='invited' from ranking alone, and the CRM reads this field — which
+    // is why 1,707 florists were reported as already on AfterLife when AfterLife held none of them.
+    AL_STATUS: l.alPublishedAt ? 'invited' : (l.alStatus==='excluded' ? 'excluded' : 'approved'),
+    fit:l.alFit??'', quality:l.alQuality??'',
     notes:l.alNotes||'', description:l.alDescription||'', vetted:!!vetted
   };
 }
@@ -3905,7 +3936,7 @@ async function publishAfterLife(){
       const byId=new Map(); suppliers.forEach((rec,ix)=>byId.set(rec.id,ix));
       approve.forEach(l=>{
         const rec=suppliers.find(x=>x.name===l.name||x.website===l.website);
-        if(rec&&publishedIds.has(rec.id)) l.alStatus='invited';
+        if(rec&&publishedIds.has(rec.id)){ l.alStatus='invited'; l.alPublishedAt=Date.now(); }
       });
     }
     if(imported)log(`✓ Published ${imported} of ${sent} selected lead(s) to AfterLife as “pending”. Approve them at afterlife.ltd/admin/suppliers.`,failed?'wn':'ok');
