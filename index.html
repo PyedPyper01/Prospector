@@ -3418,11 +3418,15 @@ const NATIONAL_AT=8;                       // areas at which a firm stops being 
 const STRICT_INDEPENDENCE=new Set(['funeral-directors','florists','probate','pension-ifa']);
 const STRICT_LABELS=['funeral directors (full service)','florists','probate solicitors','bereavement & pension ifas'];
 function currentTradeKey(){
-  const id=(($('pubCategory')&&$('pubCategory').value)||'').trim();
-  if(id) return id;
+  // The trade being WORKED wins. The publish picker is read last: it keeps whatever
+  // it was left on, and reading it first made a funeral-director run days ago decide
+  // that today's ash-scattering grid enforces independence.
   const lbl=((($('dbTrade')&&$('dbTrade').value)||($('sweepTrade')&&$('sweepTrade').value)||'')).trim().toLowerCase();
-  const hit=(typeof AL_CATEGORIES!=='undefined')?AL_CATEGORIES.find(c=>c.label.toLowerCase()===lbl):null;
-  return hit?hit.id:'';
+  if(lbl && typeof AL_CATEGORIES!=='undefined'){
+    const hit=AL_CATEGORIES.find(c=>c.label.toLowerCase()===lbl);
+    if(hit) return hit.id;
+  }
+  return (($('pubCategory')&&$('pubCategory').value)||'').trim();
 }
 function strictIndependence(){
   const k=currentTradeKey();
@@ -3433,21 +3437,28 @@ function strictIndependence(){
 // Put back the firms this trade should never have lost. Only exclusions with OWNERSHIP evidence are
 // touched — a wrong-trade exclusion stays excluded, because that judgement is still correct.
 const OWNERSHIP_RE=/not independent|consolidator blocklist|group-owned|corporate psc|\bpsc\b|tied|restricted|appointed representative/i;
+// The one exclusion that stays for every trade: it is not the searched trade.
+const WRONG_TRADE_RE=/wrong trade|different trade|not a .* (shop|specialist|firm)|irrelevant/i;
 function relaxIndependenceExclusions(where){
   if(strictIndependence()) return 0;
   let n=0, unknown=0;
   LEADS.forEach(l=>{
     if(l.alVerdict!=='EXCLUDE') return;
+    // A verdict restored from the database is a bare letter — the store keeps
+    // "[[AL EXCLUDE]]" and no reason. Demanding ownership evidence therefore lifted
+    // NOTHING for exactly the rows this is meant to rescue. So the test is inverted:
+    // an exclusion is kept only where there is positive WRONG-TRADE evidence, which
+    // is still a correct call. Everything else comes back for you to judge.
     const why=String(l.alReason||l.alNotes||l.regStatus||'');
-    if(l.independent===false || OWNERSHIP_RE.test(why)){
-      l.alVerdict='REVIEW'; l.alStatus='approved';
-      l.alNotes=((l.alNotes||'')+' [kept — chain/ownership rule does not apply to this trade]').trim();
-      n++;
-    } else unknown++;
+    if(WRONG_TRADE_RE.test(why)){ unknown++; return; }
+    l.alVerdict='REVIEW'; l.alStatus='approved';
+    l.alNotes=((l.alNotes||'')+' [kept — chain/ownership rule does not apply to this trade]').trim();
+    n++;
   });
   if(n){ render(); updateSelCount&&updateSelCount(); setStats&&setStats(); }
   if(n) log(`\u2696 Relaxed the chain/ownership exclusion on ${n} firm(s)${where?` (${where})`:''} \u2014 independence is enforced only for funeral directors, florists, probate solicitors and IFAs. They are back in the grid as REVIEW.`,'ok');
-  if(unknown) log(`${unknown} row(s) stay EXCLUDE \u2014 they carry no ownership evidence, so the exclusion was a wrong-trade or quality call. Run relaxAllExclusions() if you want those back too.`,'wn');
+  if(unknown) log(`${unknown} row(s) stay EXCLUDE \u2014 they were judged the WRONG TRADE, which is still correct. relaxAllExclusions() returns those too.`,'wn');
+  if(!n&&!unknown) log('Nothing to relax \u2014 no row in this grid carries an EXCLUDE verdict.','wn');
   return n;
 }
 // Escape hatch: bring back EVERY exclusion for a non-strict trade, wrong-trade calls included.
