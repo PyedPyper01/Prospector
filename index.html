@@ -3679,7 +3679,15 @@ async function publishAfterLife(){
   running=true;$('publishBtn').disabled=true;setStats();
   // Write up the picks that don't already have marketplace copy (i.e. anything you
   // chose that wasn't graded APPROVE). Claude writes each from its site facts.
-  const needCopy=approve.filter(l=>!(l.alDescription&&l.alDescription.trim()));
+  // Vet & Rank ALREADY writes the copy — a description comes back with every verdict. This pass is only a
+  // safety net for picks that never went through it.
+  // It must NOT retry firms whose site gave no readable text: vetting already asked the model about those
+  // and got NO_CONTENT, and asking again about the same absent text costs time and credits to fail twice.
+  // Those are the "domain does not resolve / blocks automated access / thin page" rows.
+  const hasText = l => (l.siteText||'').trim().length >= 200;
+  const needCopy = approve.filter(l => !(l.alDescription&&l.alDescription.trim()) && hasText(l));
+  const noSource = approve.filter(l => !(l.alDescription&&l.alDescription.trim()) && !hasText(l)).length;
+  if(noSource) log(`${noSource} pick(s) have no readable website text, so no write-up is possible — they publish without one. Press ⚖ Vet & Rank first if you want copy for the rest.`,'wn');
   if(needCopy.length){
     log(`Writing up ${needCopy.length} of your ${approve.length} pick(s) before sending…`,'wn');
     // 25 per call with full site text overruns the function's 26s budget and returns a 504 HTML page.
