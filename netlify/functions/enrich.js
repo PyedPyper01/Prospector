@@ -130,8 +130,20 @@ async function fetchText(url, ms = 9000, ua = UA_CHROME) {
     // emails against the stale pre-redirect hostname and wrongly treating them as belonging
     // to "a different organisation".
     return { html: await r.text(), code: 200, finalUrl: r.url || url };
-  } catch (e) { return { html: "", code: 0, finalUrl: url }; } finally { clearTimeout(t); }
+  } catch (e) {
+    // Distinguish the ways a site can be unreachable. They were all collapsing to code 0, so a dead domain,
+    // a broken certificate and a slow server were indistinguishable — and a lead whose website no longer
+    // exists looked the same as one we simply failed to read.
+    const m = String((e && (e.cause && e.cause.code)) || (e && e.message) || "");
+    const why = /ENOTFOUND|EAI_AGAIN/i.test(m) ? "dns"          // domain does not resolve — site is gone
+              : /CERT|SSL|TLS/i.test(m)        ? "tls"          // expired/misconfigured certificate
+              : /abort/i.test(m)               ? "timeout"
+              : "unreachable";
+    return { html: "", code: 0, finalUrl: url, why };
+  } finally { clearTimeout(t); }
 }
+
+
 
 function scanRegulatory(html, out){
   const txt = stripish(html);
@@ -182,6 +194,12 @@ exports.handler = async (event) => {
     const addText = html => { const t = stripish(html).trim(); if (t) textParts.push(t); };
     // 1. homepage
     let home = await fetchText(base.href);
+    // A 403/429 is a bot block rather than a broken site, and these hosts almost always still serve
+    // Googlebot. The retry below only fired on a THIN page, so an outright block was never retried.
+    if (!home.html && (home.code === 403 || home.code === 429)) {
+      const g = await fetchText(base.href, 9000, UA_GOOGLEBOT);
+      if (g.html) { home = g; out.viaGooglebot = true; }
+    }
     if (!home.html && base.protocol === "https:") { // retry http + www flip
       const alt = new URL(base.href); alt.protocol = "http:";
       home = await fetchText(alt.href);
@@ -191,6 +209,14 @@ exports.handler = async (event) => {
         home = await fetchText(w.href);
       }
     }
+    // Record what happened to the site. Without this a dead domain, a blocked host and a thin page all
+    // arrive as "no description" and look like the same problem.
+    out.siteStatus = home.html ? (stripish(home.html).length >= 400 ? "ok" : "thin")
+      : (home.why === "dns" ? "domain does not resolve"
+        : home.why === "tls" ? "certificate/TLS error"
+        : home.code === 403 || home.code === 429 ? "blocks automated access"
+        : home.code ? ("HTTP " + home.code) : "unreachable");
+
     // If the page came back as a thin JS shell (bot protection serving datacenter IPs), retry as Googlebot.
     if (home.html && stripish(home.html).length < 400) {
       const g = await fetchText(base.href, 9000, UA_GOOGLEBOT);

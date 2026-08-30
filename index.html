@@ -204,6 +204,7 @@ button.primary .muted, button.primary .muted *, .primary .muted {
       <label class="chk"><input type="checkbox" id="aiClassify" checked> AI classify every result (Claude catches wrong trades &amp; chains)</label>
       <label class="chk"><input type="checkbox" id="areaLevel"> Area-level sweep (spread centres per area — cheaper, wider than the main town)</label>
       <label class="chk"><input type="checkbox" id="autoEnrich" checked> Auto-enrich after a search (emails · contacts · ownership purge)</label>
+      <label class="chk"><input type="checkbox" id="skipComplete" checked> Skip firms that already have an email and a phone <span class="muted">(much faster on a re-run — but a skipped firm is not re-crawled, so Vet &amp; Rank judges it on what is already on the row)</span></label>
       <label class="chk"><input type="checkbox" id="meteredEnrich"> Metered enrichment — Firecrawl + Hunter (uncheck for free/cheap runs)</label>
       <div class="row" style="margin-top:10px">
         <div><label>Min reviews</label><input type="number" id="minRev" value="0" min="0"></div>
@@ -2536,7 +2537,17 @@ async function enrichAll(){
    fillWebsites();
    const still=LEADS.filter(l=>!l.website).length; if(still)log(`${still} firm(s) still have no website on record — can't crawl those for an email.`,'wn');
    render();setStats();}
-  const todo=LEADS.filter(l=>!l.enriched);
+  // Skip work already done. `enriched` covers rows crawled in THIS session; the second test catches rows
+  // loaded from the database that already carry contact details from a previous run — which is most of a
+  // re-run, and re-crawling them is the single biggest waste of time in a big pass.
+  // Site text is NOT stored in the database, so a skipped row goes into Vet & Rank without fresh page text.
+  // That is fine for a row already vetted, and a fair trade for speed on one that is not — hence the choice
+  // sits in Rules rather than being imposed.
+  const skipDone = $('skipComplete') ? $('skipComplete').checked : false;
+  const isComplete = l => (l.emails||'').trim() && (l.phone||'').trim();
+  const todo = LEADS.filter(l => !l.enriched && !(skipDone && isComplete(l) && !l.siteText));
+  const skipped = LEADS.filter(l => !l.enriched && skipDone && isComplete(l) && !l.siteText).length;
+  if(skipped) log(`Skipping ${skipped} firm(s) that already have an email and a phone — untick "Skip firms that already have..." in Rules to re-crawl them anyway.`,'ok');
   log(`Enriching ${todo.length} leads, 20 at a time (website crawl + Companies House${localStorage.getItem('pp_Hunter')?' + Hunter':''})…`,'ok');
   let done=0;
   const worker=async()=>{
@@ -2686,6 +2697,17 @@ async function enrichAll(){
     EXCLUDED=DROPPED.length;
     log(`↩ Moved ${ars.length} tied/restricted firm(s) to the excluded list — recover any via ↩ Restore excluded. The Regulatory column is now just a fallback for anything that slips past.`,'wn');
     render();setStats();
+  }
+  // Why the write-ups will be blank for some firms — otherwise "no description" looks like one problem
+  // when it is really four, and a dead website looks the same as a crawl we fluffed.
+  {
+    const bad=LEADS.filter(l=>l.siteStatus&&l.siteStatus!=='ok');
+    if(bad.length){
+      const by={}; bad.forEach(l=>by[l.siteStatus]=(by[l.siteStatus]||0)+1);
+      log(`${bad.length} firm(s) gave no usable page text, so they get no write-up: `
+        + Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${v} ${k}`).join(' · ')
+        + '. "domain does not resolve" means that website is gone — those are worth removing.', 'wn');
+    }
   }
   const frns=LEADS.filter(l=>l.frn).length;
   log(`Enrichment complete — ${LEADS.filter(l=>l.emails).length} with email, ${LEADS.filter(l=>l.contact).length} with a named contact${frns?`, ${frns} with an FCA number scraped from their site`:''}.`,'ok');
