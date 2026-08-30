@@ -8,6 +8,15 @@
 
 const IMPORT_URL = "https://afterlife.ltd/api/suppliers/import";
 
+// The England & Wales postcode areas AfterLife serves. This gate was being applied — `EW.has(a)` — but the
+// set was never defined, so EVERY publish died with "EW is not defined" and imported nothing while still
+// returning HTTP 200. Defining it here restores the intended filter: Scottish, Northern Irish and Channel
+// Island areas are dropped rather than published into a marketplace that does not cover them.
+const EW = new Set(("AL B BA BB BD BH BL BN BR BS CA CB CF CH CM CO CR CT CV CW DA DE DH DL DN DT DY E EC EN "
+  + "EX FY GL GU HA HD HG HP HR HU IG IP KT L LA LD LE LL LN LS LU M ME MK N NE NG NN NP NR NW OL OX PE PL PO "
+  + "PR RG RH RM S SA SE SG SK SL SM SN SO SP SR SS ST SW SY TA TF TN TQ TR TS TW UB W WA WC WD WF WN WR WS "
+  + "WV YO").split(" "));
+
 exports.handler = async (event) => {
   const headers = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: { ...headers, "Access-Control-Allow-Headers": "*" } };
@@ -36,7 +45,13 @@ exports.handler = async (event) => {
       areas: (Array.isArray(l.areas) ? l.areas : (l.area ? [l.area] : []))
         .map(a => String(a).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))
         .filter(a => a && EW.has(a)),
-      area: String((Array.isArray(l.areas) && l.areas[0]) || l.area || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2),
+      // Take the primary from the FILTERED list — otherwise an area the gate just removed could still
+      // arrive as the record's headline area.
+      area: (() => {
+        const list = (Array.isArray(l.areas) ? l.areas : (l.area ? [l.area] : []))
+          .map(a => String(a).toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2)).filter(a => a && EW.has(a));
+        return list[0] || "";
+      })(),
       // Derived here as well as sent, so a caller that forgets the flag still cannot publish a firm covering
       // eighty areas as "Local". areaCount travels with it so the marketplace need not recount.
       areaCount: (Array.isArray(l.areas) ? l.areas.length : (l.area ? 1 : 0)),

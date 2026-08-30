@@ -3155,7 +3155,11 @@ function rankLeads(){
   LEADS.forEach(l=>{
     l.alBatch=AL_BATCH_ID;
     if(l.alVerdict==='EXCLUDE'){l.alPriority='-';l.alStatus='excluded';}
-    else{l.alPriority=++p;l.alStatus=l.alVerdict==='APPROVE'?'invited':'pipeline';}
+    // "approved" means Vet & Rank passed it — NOT that AfterLife has it. This said 'invited', which is a
+    // claim about AfterLife that vetting has no way of knowing: the CRM reads AL_STATUS and reported 1,707
+    // firms as "already invited to AfterLife" on a run where the AfterLife publish had failed outright and
+    // imported nothing. Only a successful publish sets 'invited', below.
+    else{l.alPriority=++p;l.alStatus=l.alVerdict==='APPROVE'?'approved':'pipeline';}
   });
   sortKey='alPriority';sortDir=1;
 }
@@ -3824,6 +3828,8 @@ async function publishAfterLife(){
     if(nat.length)log(`${nat.length} firm(s) publish as ${nat[0].tier==='National'?'National/Regional':'multi-area'}: `+nat.slice(0,6).map(x=>`${x.name} [${x.areaCount} areas]`).join('; '),'ok');
   }
   log(`Publishing ${suppliers.length} supplier record(s) to AfterLife — one per firm, each carrying every area it covers…`,'wn');
+  // Rows are marked 'invited' only for records AfterLife confirms it imported — see the chunk loop below.
+  const publishedIds = new Set();
   // Send in CHUNKS. One big request makes AfterLife's importer exceed its function timeout and the
   // gateway returns a 502 with nothing imported — a whole batch lost. Chunking keeps each request
   // well inside the limit, and a failure now costs only that chunk: everything before it is already in.
@@ -3839,10 +3845,22 @@ async function publishAfterLife(){
           log(`  chunk ${Math.floor(i/CHUNK)+1} failed (HTTP ${r.status}${d&&d.error?' — '+d.error:''}) — ${part.length} record(s) not sent.`,'er');
         }else{
           imported+=(d.imported||0); sent+=(d.sent||part.length);
+          // Only the ids AfterLife confirms it imported are marked invited. Anything else keeps the
+          // 'approved' status vetting gave it, so a failed publish can never tell the CRM these firms are
+          // already on AfterLife.
+          (d.ids||[]).forEach(id=>publishedIds.add(id));
           if(d.errors&&d.errors.length)allErrors.push(...d.errors);
         }
       }catch(e){ failed+=part.length; log(`  chunk ${Math.floor(i/CHUNK)+1} error — ${e.message}`,'er'); }
       if(suppliers.length>CHUNK)log(`  …${Math.min(i+CHUNK,suppliers.length)}/${suppliers.length} sent · ${imported} imported${failed?` · ${failed} failed`:''}`,'wn');
+    }
+    // stamp 'invited' onto the rows whose record AfterLife actually accepted
+    if(publishedIds.size){
+      const byId=new Map(); suppliers.forEach((rec,ix)=>byId.set(rec.id,ix));
+      approve.forEach(l=>{
+        const rec=suppliers.find(x=>x.name===l.name||x.website===l.website);
+        if(rec&&publishedIds.has(rec.id)) l.alStatus='invited';
+      });
     }
     if(imported)log(`✓ Published ${imported} of ${sent} selected lead(s) to AfterLife as “pending”. Approve them at afterlife.ltd/admin/suppliers.`,failed?'wn':'ok');
     if(failed)log(`${failed} record(s) did NOT publish — re-tick just those and run Publish again (already-published ones are safe to re-send, they upsert).`,'er');
