@@ -2524,7 +2524,10 @@ async function getContactDetails(){
 async function enrichAll(){
   if(running||!LEADS.length)return;
   if(MODE!=='functions'){log('Enrichment needs the serverless functions — deploy the folder to Netlify (drag the folder CONTENTS so netlify.toml sits at the root), then reload. Search still works in browser mode.','er');return;}
+  // Released in the finally below. Without it, any error mid-run left running=true and BOTH ✦ Enrich and
+  // ⚖ Vet & Rank greyed out permanently, with a page reload the only way back.
   running=true;$('enrichBtn').disabled=true;$('run').disabled=true;
+  try{
   // STEP A — cross-fill a website onto directory rows from a same-name sibling (NO merge yet, so each
   // branch row keeps its own URL and gets crawled for its own branch email).
   {const filled=fillWebsites(); if(filled)log(`Cross-fill: gave ${filled} directory row(s) a website from a sibling listing (crawled next).`,'ok'); render();setStats();}
@@ -2685,7 +2688,9 @@ async function enrichAll(){
   const frns=LEADS.filter(l=>l.frn).length;
   log(`Enrichment complete — ${LEADS.filter(l=>l.emails).length} with email, ${LEADS.filter(l=>l.contact).length} with a named contact${frns?`, ${frns} with an FCA number scraped from their site`:''}.`,'ok');
   reportSlots('Distinct companies (sellable slots) by area, post-enrich');
-  running=false;$('run').disabled=false;setStats();
+  }finally{
+    running=false;$('run').disabled=false;setStats();
+  }
 }
 
 let sortKey='alPriority',sortDir=1;   // default was 'reviews' — review count is no longer fetched, so open on AfterLife priority instead
