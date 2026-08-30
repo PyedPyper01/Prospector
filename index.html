@@ -204,7 +204,7 @@ button.primary .muted, button.primary .muted *, .primary .muted {
       <label class="chk"><input type="checkbox" id="aiClassify" checked> AI classify every result (Claude catches wrong trades &amp; chains)</label>
       <label class="chk"><input type="checkbox" id="areaLevel"> Area-level sweep (spread centres per area — cheaper, wider than the main town)</label>
       <label class="chk"><input type="checkbox" id="autoEnrich" checked> Auto-enrich after a search (emails · contacts · ownership purge)</label>
-      <label class="chk"><input type="checkbox" id="skipComplete" checked> Skip firms that already have an email and a phone <span class="muted">(much faster on a re-run — but a skipped firm is not re-crawled, so Vet &amp; Rank judges it on what is already on the row)</span></label>
+      <label class="chk"><input type="checkbox" id="skipComplete" checked> Skip firms already enriched <span class="muted">(a row crawled in the last 60 days, or already holding an email and a phone, is not crawled again — untick to force a full re-crawl)</span></label>
       <label class="chk"><input type="checkbox" id="meteredEnrich"> Metered enrichment — Firecrawl + Hunter (uncheck for free/cheap runs)</label>
       <div class="row" style="margin-top:10px">
         <div><label>Min reviews</label><input type="number" id="minRev" value="0" min="0"></div>
@@ -2097,7 +2097,7 @@ async function loadFromDatabase(){
     {
       const byKey=new Map();
       rows.forEach(o=>byKey.set(((o.name||'').trim().toLowerCase())+'|'+((o.area||'').toUpperCase()), o));
-      let copy=0, verdicts=0;
+      let copy=0, verdicts=0, enrichedBack=0;
       LEADS.forEach(l=>{
         const o=byKey.get(((l.name||'').trim().toLowerCase())+'|'+((l.batchArea||l.area||'').toUpperCase()));
         if(!o) return;
@@ -2112,8 +2112,16 @@ async function loadFromDatabase(){
           verdicts++;
         }
         if(!l.independent && o.independence) l.independent = (o.independence==='independent');
+        // A row crawled in the last 60 days does not need crawling again. Sites change slowly, and a dead
+        // domain will still be dead.
+        if(o.last_verified){
+          const age=(Date.now()-Date.parse(o.last_verified))/86400000;
+          if(age>=0 && age<=60){ l.enriched=true; enrichedBack++; }
+        }
+        if((o.source_list||'').startsWith('site:')) l.siteStatus=o.source_list.slice(5);
       });
-      if(copy||verdicts) log(`Restored ${copy} saved write-up(s) and ${verdicts} previous verdict(s) — these rows do NOT need Vet & Rank again.`,'ok');
+      if(copy||verdicts||enrichedBack) log(`Restored ${copy} write-up(s), ${verdicts} verdict(s) and ${enrichedBack} row(s) already crawled `
+        + `— those do NOT need Enrich or Vet & Rank again. Untick "Skip firms already enriched" in Rules to force a re-crawl.`,'ok');
     }
     log(`Loaded ${rows.length} stored firm(s) from the database${trade?` (trade: ${trade})`:''}${area?`, area ${area}`:''} into the grid. Now: review → ✦ Enrich → ⚖ Vet & Rank → tick → publish.`,'ok');
   }catch(e){ if(st)st.textContent='Load failed — '+e.message; log('Database load error — '+e.message,'er'); }
@@ -2174,6 +2182,11 @@ async function saveGridToDatabase(){
     // that was never being written, and the verdict travels as a compact tag on notes since there is no
     // column for it.
     put('description', l.alDescription);
+    // Record that this row HAS been crawled, and what its website did. Without this the fact was lost on
+    // reload, so every firm whose site is dead, blocked or JavaScript-only was crawled again on the next
+    // run purely to fail again — about half of them.
+    if(l.enriched || l.siteStatus) put('last_verified', new Date().toISOString().slice(0,10));
+    if(l.siteStatus && l.siteStatus!=='ok') put('source_list', 'site:'+l.siteStatus);
     put('independence', l.independent===true?'independent':(l.independent===false?'not-independent':''));
     if(l.alVerdict){
       const tag = `[[AL ${l.alVerdict}`
