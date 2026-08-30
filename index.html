@@ -255,6 +255,7 @@ button.primary .muted, button.primary .muted *, .primary .muted {
       <button class="primary" id="findWebBtn" onclick="findWebsitesClaude()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#7a5cff,#5b3fd6)">🔎 Top up the rest with Claude <span class="muted">(~2p/firm — only the ones the free finder missed)</span></button>
       <button class="primary" id="enrichBtn" onclick="enrichAll()" disabled style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">✦ Enrich kept leads (email · contact · ownership)</button>
       <button class="ghost small" onclick="collapseNationalFirms()" style="width:100%;margin-top:8px">⧉ Collapse national firms <span class="muted">(one firm listed in many areas → a single row covering them all)</span></button>
+      <button class="ghost small" id="hunterFillBtn" onclick="hunterFillEmails()" style="width:100%;margin-top:8px">✉ Find missing emails with Hunter <span class="muted">(only rows with a website and no email — one lookup per domain)</span></button>
       <button class="ghost small" id="refreshContactsBtn" onclick="refreshContactsFromDb()" style="width:100%;margin-top:8px">↻ Refresh emails &amp; phones from the database <span class="muted">(keeps your vetting — fills only what is blank)</span></button>
       <button class="ghost small" id="rankedCsvBtn" onclick="exportRanked()" disabled style="width:100%;margin-top:8px">⬇ Export ranked CSV (all leads + AL columns)</button>
       <div style="border:1px dashed var(--line);border-radius:8px;padding:8px;margin-top:8px">
@@ -1267,6 +1268,55 @@ function collapseNationalFirms(){
   render(); updateSelCount && updateSelCount(); updateButtons && updateButtons();
   log(`⧉ Collapsed ${firms} national firm(s): ${collapsed} duplicate row(s) merged away. `
     + `The grid is now ${LEADS.length} row(s). Each collapsed firm publishes ONCE covering all its areas.`,'ok');
+}
+
+
+/* ---------- Hunter, aimed only at the gap ----------
+   The free site crawl gets an email from firms that publish one. What it cannot do is read a contact-form-only
+   or JavaScript-rendered site — that residue is what Hunter is for.
+   Two rules keep the spend honest: only rows that HAVE a website and have NO email are considered, and the
+   lookups are de-duplicated BY DOMAIN because Hunter bills per domain, not per row. Branches of one firm, and
+   the same firm listed in several areas, cost one lookup between them. */
+async function hunterFillEmails(){
+  if(!LEADS.length){ log('Nothing in the grid.','wn'); return; }
+  const dom=u=>{const m=/https?:\/\/(?:www\.)?([^\/?#]+)/i.exec(u||''); return m?m[1].toLowerCase():'';};
+  const gap=LEADS.filter(l=>(l.website||'').trim() && !(l.emails||'').trim());
+  if(!gap.length){ log('Every row with a website already has an email — nothing for Hunter to do.','ok'); return; }
+  const byDom=new Map();
+  gap.forEach(l=>{const d=dom(l.website); if(!d)return; if(!byDom.has(d))byDom.set(d,[]); byDom.get(d).push(l);});
+  const domains=[...byDom.keys()];
+  if(!domains.length){ log('No usable domains on the rows without an email.','wn'); return; }
+
+  if(!confirm(`Look up ${domains.length} domain(s) with Hunter?\n\n`
+    +`${gap.length} row(s) have a website but no email; they share ${domains.length} domain(s), so that is `
+    +`${domains.length} Hunter credit(s) — not ${gap.length}.\n\nThis is your metered Hunter balance.`)) return;
+
+  const btn=$('hunterFillBtn'); if(btn)btn.disabled=true;
+  let done=0, found=0, noKey=false;
+  const worker=async()=>{
+    while(domains.length&&!noKey){
+      const d=domains.shift();
+      try{
+        const r=await fetch('/.netlify/functions/hunter',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({domain:d,hunterKey:localStorage.getItem('pp_Hunter')||undefined})});
+        const j=await r.json();
+        if(j.skipped&&/no Hunter key/i.test(j.reason||'')){ noKey=true; log('No Hunter key set — add HUNTER_KEY in Netlify or paste it in Settings.','er'); break; }
+        // prefer a role address over someone's personal one
+        const list=(j.emails||[]);
+        const pick=list.find(e=>/^(info|enquiries|enquiry|hello|contact|admin|office|sales|mail)@/i.test(e))||list[0];
+        if(pick){ byDom.get(d).forEach(l=>{ if(!(l.emails||'').trim()) l.emails=pick; }); found++; }
+      }catch(e){ /* one bad domain must not stop the run */ }
+      done++;
+      if(done%25===0){ log(`  Hunter: ${done} domain(s) looked up, ${found} with an email…`); render(); }
+      await new Promise(r=>setTimeout(r,120));
+    }
+  };
+  await Promise.all([worker(),worker(),worker(),worker()]);
+  render(); updateSelCount&&updateSelCount();
+  const filled=LEADS.filter(l=>(l.emails||'').trim()).length;
+  log(`Hunter finished — ${done} domain(s) looked up (that is ${done} credit(s)), ${found} returned an email. `
+    +`The grid now has ${filled} row(s) with an email. Use ⬆ Save the grid to the database to keep them.`, found?'ok':'wn');
+  if(btn)btn.disabled=false;
 }
 
 /* ---------- BATCH QUEUE: run a matrix of areas × categories unattended (resume · master CSV · webhook) ---------- */
