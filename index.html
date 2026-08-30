@@ -2537,7 +2537,7 @@ async function enrichAll(){
    const still=LEADS.filter(l=>!l.website).length; if(still)log(`${still} firm(s) still have no website on record — can't crawl those for an email.`,'wn');
    render();setStats();}
   const todo=LEADS.filter(l=>!l.enriched);
-  log(`Enriching ${todo.length} leads, 12 at a time (website crawl + Companies House${localStorage.getItem('pp_Hunter')?' + Hunter':''})…`,'ok');
+  log(`Enriching ${todo.length} leads, 20 at a time (website crawl + Companies House${localStorage.getItem('pp_Hunter')?' + Hunter':''})…`,'ok');
   let done=0;
   const worker=async()=>{
     while(todo.length){
@@ -2550,9 +2550,11 @@ async function enrichAll(){
                                                 // politeness rather than a rate limit on any one host
     }
   };
-  // 12 crawlers, up from 6. Enrich is almost entirely waiting on other people's web servers, and each firm is
-  // a different host — the background contact crawl ran 16 at once across 30,000 sites without trouble.
-  const CRAWLERS=12;
+  // 20 crawlers. Enrich is almost entirely waiting on other people's web servers and every firm is a
+  // different host, so this is politeness rather than load on any one site; the background contact crawl ran
+  // 16 at once across 30,000 sites without trouble. Kept below the Vet & Rank figure deliberately — that
+  // talks to one API whose capacity is known, this talks to thousands of small business hosts.
+  const CRAWLERS=20;
   await Promise.all(Array.from({length:CRAWLERS},()=>worker()));
   // Data-clean before merging: drop a stray chain email off an independent so it can't fuse chain branches
   // in. NO exclusion verdict here — that's decided ONCE per company after the final merge.
@@ -3173,9 +3175,14 @@ async function vetRank(){
   // independent Claude call, so waiting for one before starting the next left the browser idle most of the
   // time — a 473-lead grid took ~20 minutes. Four in flight cuts that to roughly a quarter with identical
   // results; the pool is kept small deliberately so we stay well inside the API rate limit.
-  // Concurrency is the safe half of the speedup: each batch is its own function invocation, so running more
-  // at once does not lengthen any single call and cannot cause the 504.
-  const POOL=8; let nextIdx=0;
+  // Concurrency is the safe lever: each batch is its own function invocation, so running more at once does
+  // not lengthen any single call. Measured on the live function with realistic 1,500-char site text:
+  //   pool  8 → 3.2 leads/sec, slowest call 12.5s
+  //   pool 16 → 4.5 leads/sec, slowest call 17.8s
+  //   pool 24 → 6.6 leads/sec, slowest call 18.3s   (repeated twice, 24/24 batches OK both times)
+  // The slowest call barely moves, so the 26s limit is not the constraint here — the model latency is.
+  // Batch size stays at 5; that IS bounded by the 26s limit and 10 caused 504s on real data.
+  const POOL=24; let nextIdx=0;
   const runOne=async(bi)=>{
     const batch=batches[bi];
     let d=null, lastErr='';
