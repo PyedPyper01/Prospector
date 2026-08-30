@@ -2107,18 +2107,29 @@ async function saveGridToDatabase(){
     const wasStored = !!(raw.SOURCE || raw.source);
     const origSource = raw.SOURCE || raw.source || '';
     const origNotes  = raw.NOTES  || raw.notes  || '';
-    rows.push({ name:l.name, trade, area, district:l.district||null, postcode:l.postcode||null, address:l.address||null,
-      website:l.website||null, phone:l.phone||null, email:em||null, company_number:l.companyNo||null,
+    // Send ONLY what this row actually has. The grid is a working copy and routinely holds less than the
+    // database — it carries the outcode where the store has the full postcode, and loses a phone that no
+    // longer displays. Sending null for those and upserting wrote the gaps back over good data: a save of
+    // 1,880 enriched locksmiths put zero phones into the store, erasing the 98% that the Maps sweep had
+    // captured. `merge` touches only the keys present, so a save can add and improve but never erase.
+    const row = { name:l.name, trade, area,
       source: wasStored ? origSource : srcTag,
       status:'verified',
-      notes: (wasStored && origNotes) ? origNotes : (l.alNotes||l.excludeReason||null) });
+      notes: (wasStored && origNotes) ? origNotes : (l.alNotes||l.excludeReason||null) };
+    const put = (k,v) => { if(v!==undefined && v!==null && String(v).trim()!=='') row[k]=v; };
+    put('district', l.district); put('address', l.address); put('website', l.website);
+    put('phone', l.phone); put('email', em); put('company_number', l.companyNo);
+    // Only send a postcode that is a FULL one. The grid often holds just the outcode ("CO2"), and writing
+    // that over a stored "CO2 8JB" loses the delivery point for no gain.
+    if(/^[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}$/i.test(String(l.postcode||'').trim())) put('postcode', l.postcode);
+    rows.push(row);
   }
   if(!rows.length){ if(st)st.textContent='No rows had both a name and an area — nothing saved.'; return; }
   if(st)st.textContent=`Saving ${rows.length} firm(s)…`;
   let saved=0, failed=0;
   for(let i=0;i<rows.length;i+=100){
     try{
-      const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'upsert',rows:rows.slice(i,i+100)})});
+      const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'merge',rows:rows.slice(i,i+100)})});
       const d=await r.json();
       if(d&&d.ok)saved+=d.upserted||0; else { failed+=Math.min(100,rows.length-i); log('Save batch failed — '+JSON.stringify(d).slice(0,200),'er'); }
     }catch(e){ failed+=Math.min(100,rows.length-i); log('Save batch error — '+e.message,'er'); }
