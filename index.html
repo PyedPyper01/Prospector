@@ -2124,6 +2124,7 @@ async function loadFromDatabase(){
         + `— those do NOT need Enrich or Vet & Rank again. Untick "Skip firms already enriched" in Rules to force a re-crawl.`,'ok');
     }
     log(`Loaded ${rows.length} stored firm(s) from the database${trade?` (trade: ${trade})`:''}${area?`, area ${area}`:''} into the grid. Now: review → ✦ Enrich → ⚖ Vet & Rank → tick → publish.`,'ok');
+    relaxIndependenceExclusions('loaded from the database');
   }catch(e){ if(st)st.textContent='Load failed — '+e.message; log('Database load error — '+e.message,'er'); }
 }
 /* ---------- SAVE TO DATABASE: push the current grid into the shared kb ----------
@@ -2773,7 +2774,8 @@ async function enrichAll(){
   // appointed representative of SJP or a network is not an independent). Moved to the excluded list, fully
   // recoverable via ↩ Restore excluded. The Regulatory column is now just a fallback for anything that slips
   // past this. (Funeral-PLAN ARs are neutral/required — l.planAR — and are NOT excluded.)
-  const arRe=l=>!l.planAR&&l.regStatus&&/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU|SUBSIDIARY/i.test(l.regStatus);
+  // Same rule, same limit: only the four trades where independence is the proposition.
+  const arRe=l=>strictIndependence()&&!l.planAR&&l.regStatus&&/APPOINTED|RESTRICTED|NETWORK|TIED|ST JAMES|NFU|SUBSIDIARY/i.test(l.regStatus);
   const ars=LEADS.filter(arRe);
   if(ars.length){
     log(`⚠ NOT INDEPENDENT — ${ars.length} firm(s) disclose tied/restricted status in their own site small print — EXCLUDED:`,'er');
@@ -3404,6 +3406,60 @@ async function vetRank(){
    called them ("Dillys" / "Dillys Bespoke Florist"). Company number, then email domain, then name are
    fallbacks for rows with no site. */
 const NATIONAL_AT=8;                       // areas at which a firm stops being local
+
+/* ---------- where the chain / ownership rule actually applies ----------
+   Excluding a firm for being part of a group is RIGHT where a local independent is the whole
+   proposition. It is WRONG for trades that are national by nature: an ash-scattering operator, a
+   memorial-jewellery maker or a repatriation specialist serves the country from one address, and one
+   domain spanning a hundred postcode areas is its business model, not a disguised chain. Applied
+   globally it emptied a trade — 617 ash-scattering firms in the grid, 9 of them tickable.
+   Strict for these four only; everywhere else an ownership finding is RECORDED and the firm is KEPT
+   for you to judge. */
+const STRICT_INDEPENDENCE=new Set(['funeral-directors','florists','probate','pension-ifa']);
+const STRICT_LABELS=['funeral directors (full service)','florists','probate solicitors','bereavement & pension ifas'];
+function currentTradeKey(){
+  const id=(($('pubCategory')&&$('pubCategory').value)||'').trim();
+  if(id) return id;
+  const lbl=((($('dbTrade')&&$('dbTrade').value)||($('sweepTrade')&&$('sweepTrade').value)||'')).trim().toLowerCase();
+  const hit=(typeof AL_CATEGORIES!=='undefined')?AL_CATEGORIES.find(c=>c.label.toLowerCase()===lbl):null;
+  return hit?hit.id:'';
+}
+function strictIndependence(){
+  const k=currentTradeKey();
+  if(k) return STRICT_INDEPENDENCE.has(k);
+  const lbl=((($('dbTrade')&&$('dbTrade').value)||($('sweepTrade')&&$('sweepTrade').value)||'')).trim().toLowerCase();
+  return STRICT_LABELS.includes(lbl);
+}
+// Put back the firms this trade should never have lost. Only exclusions with OWNERSHIP evidence are
+// touched — a wrong-trade exclusion stays excluded, because that judgement is still correct.
+const OWNERSHIP_RE=/not independent|consolidator blocklist|group-owned|corporate psc|\bpsc\b|tied|restricted|appointed representative/i;
+function relaxIndependenceExclusions(where){
+  if(strictIndependence()) return 0;
+  let n=0, unknown=0;
+  LEADS.forEach(l=>{
+    if(l.alVerdict!=='EXCLUDE') return;
+    const why=String(l.alReason||l.alNotes||l.regStatus||'');
+    if(l.independent===false || OWNERSHIP_RE.test(why)){
+      l.alVerdict='REVIEW'; l.alStatus='approved';
+      l.alNotes=((l.alNotes||'')+' [kept — chain/ownership rule does not apply to this trade]').trim();
+      n++;
+    } else unknown++;
+  });
+  if(n){ render(); updateSelCount&&updateSelCount(); setStats&&setStats(); }
+  if(n) log(`\u2696 Relaxed the chain/ownership exclusion on ${n} firm(s)${where?` (${where})`:''} \u2014 independence is enforced only for funeral directors, florists, probate solicitors and IFAs. They are back in the grid as REVIEW.`,'ok');
+  if(unknown) log(`${unknown} row(s) stay EXCLUDE \u2014 they carry no ownership evidence, so the exclusion was a wrong-trade or quality call. Run relaxAllExclusions() if you want those back too.`,'wn');
+  return n;
+}
+// Escape hatch: bring back EVERY exclusion for a non-strict trade, wrong-trade calls included.
+function relaxAllExclusions(){
+  if(strictIndependence()){ log('This trade enforces independence \u2014 nothing relaxed.','wn'); return 0; }
+  let n=0;
+  LEADS.forEach(l=>{ if(l.alVerdict==='EXCLUDE'){ l.alVerdict='REVIEW'; l.alStatus='approved';
+    l.alNotes=((l.alNotes||'')+' [restored by relaxAllExclusions]').trim(); n++; } });
+  render(); updateSelCount&&updateSelCount(); setStats&&setStats();
+  log(`\u21a9 ${n} row(s) returned to the grid as REVIEW. Check them before ticking \u2014 wrong-trade calls are among them.`,'ok');
+  return n;
+}
 function firmIdentity(l){
   const dom=domainOf(l.website);                     if(dom)  return 'd:'+dom;
   const ch=(l.companyNo||'').toString().replace(/\s/g,'').toUpperCase(); if(ch) return 'c:'+ch;
