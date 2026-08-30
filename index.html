@@ -2078,6 +2078,29 @@ async function loadFromDatabase(){
     const areas=[...new Set(rows.map(o=>o.area))].sort();
     if(st)st.textContent=`✓ ${rows.length} stored firm(s) · ${areas.length} area(s): ${areas.slice(0,14).join(', ')}${areas.length>14?'…':''}`;
     await loadManualSupply(csv);
+    // Restore the vetting that was saved with these rows, so a reloaded trade does not have to be re-vetted
+    // just to recover copy it already has.
+    {
+      const byKey=new Map();
+      rows.forEach(o=>byKey.set(((o.name||'').trim().toLowerCase())+'|'+((o.area||'').toUpperCase()), o));
+      let copy=0, verdicts=0;
+      LEADS.forEach(l=>{
+        const o=byKey.get(((l.name||'').trim().toLowerCase())+'|'+((l.batchArea||l.area||'').toUpperCase()));
+        if(!o) return;
+        if(!l.alDescription && (o.description||'').trim()){ l.alDescription=o.description.trim(); copy++; }
+        const m=/\[\[AL (APPROVE|REVIEW|EXCLUDE)(?: p(\d+))?(?: f(\d+))?(?: q(\d+))?\]\]/.exec(o.notes||'');
+        if(m && !l.alVerdict){
+          l.alVerdict=m[1];
+          if(m[2]!=null)l.alPriority=+m[2];
+          if(m[3]!=null)l.alFit=+m[3];
+          if(m[4]!=null)l.alQuality=+m[4];
+          l.alStatus=(m[1]==='EXCLUDE')?'excluded':'approved';
+          verdicts++;
+        }
+        if(!l.independent && o.independence) l.independent = (o.independence==='independent');
+      });
+      if(copy||verdicts) log(`Restored ${copy} saved write-up(s) and ${verdicts} previous verdict(s) — these rows do NOT need Vet & Rank again.`,'ok');
+    }
     log(`Loaded ${rows.length} stored firm(s) from the database${trade?` (trade: ${trade})`:''}${area?`, area ${area}`:''} into the grid. Now: review → ✦ Enrich → ⚖ Vet & Rank → tick → publish.`,'ok');
   }catch(e){ if(st)st.textContent='Load failed — '+e.message; log('Database load error — '+e.message,'er'); }
 }
@@ -2119,6 +2142,18 @@ async function saveGridToDatabase(){
     const put = (k,v) => { if(v!==undefined && v!==null && String(v).trim()!=='') row[k]=v; };
     put('district', l.district); put('address', l.address); put('website', l.website);
     put('phone', l.phone); put('email', em); put('company_number', l.companyNo);
+    // Keep the expensive work. Vet & Rank costs money and time; discarding its output on save meant a
+    // reloaded trade had to be vetted again purely to get its copy back. The store has a description column
+    // that was never being written, and the verdict travels as a compact tag on notes since there is no
+    // column for it.
+    put('description', l.alDescription);
+    put('independence', l.independent===true?'independent':(l.independent===false?'not-independent':''));
+    if(l.alVerdict){
+      const tag = `[[AL ${l.alVerdict}`
+        + (typeof l.alPriority==='number'?` p${l.alPriority}`:'')
+        + (l.alFit!=null?` f${l.alFit}`:'') + (l.alQuality!=null?` q${l.alQuality}`:'') + ']]';
+      row.notes = ((row.notes||'') + ' ' + tag).trim();
+    }
     // Only send a postcode that is a FULL one. The grid often holds just the outcode ("CO2"), and writing
     // that over a stored "CO2 8JB" loses the delivery point for no gain.
     if(/^[A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2}$/i.test(String(l.postcode||'').trim())) put('postcode', l.postcode);
@@ -2131,7 +2166,7 @@ async function saveGridToDatabase(){
     try{
       const r=await fetch('/.netlify/functions/kb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'merge',rows:rows.slice(i,i+100)})});
       const d=await r.json();
-      if(d&&d.ok)saved+=d.upserted||0; else { failed+=Math.min(100,rows.length-i); log('Save batch failed — '+JSON.stringify(d).slice(0,200),'er'); }
+      if(d&&d.ok)saved+=(d.merged||d.upserted||0)||0; else { failed+=Math.min(100,rows.length-i); log('Save batch failed — '+JSON.stringify(d).slice(0,200),'er'); }
     }catch(e){ failed+=Math.min(100,rows.length-i); log('Save batch error — '+e.message,'er'); }
   }
   if(st)st.textContent=`✓ Saved ${saved} firm(s) to the database as "${trade}" tagged "${srcTag}".`+(failed?` ${failed} failed.`:'')+(noArea?` ${noArea} row(s) skipped (no area).`:'');
