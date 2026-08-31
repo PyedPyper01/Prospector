@@ -232,5 +232,107 @@
   ],
   "keep": "animal rescue|animal shelter|pet adoption",
   "drop": "thrift store|charity shop|veterinar|pharmacy|pet shop"
+ },
+ "Direct cremation specialists": {
+  "terms": [
+   "direct cremation"
+  ],
+  "keep": "funeral director|funeral home|cremation|crematorium",
+  "drop": "cemetery|florist|mason|monument|pet "
+ },
+ "Repatriation specialists": {
+  "terms": [
+   "funeral repatriation"
+  ],
+  "keep": "funeral director|funeral home|repatriation|shipping|freight",
+  "drop": "removal|storage|courier|taxi"
+ },
+ "Embalming specialists": {
+  "terms": [
+   "embalmer",
+   "embalming services"
+  ],
+  "keep": "funeral director|funeral home|embalm|mortuary",
+  "drop": "florist|mason|cemetery"
+ },
+ "Custom coffin makers": {
+  "terms": [
+   "coffin maker",
+   "bespoke coffins"
+  ],
+  "keep": "coffin|casket|funeral supply|woodwork|carpenter|joiner",
+  "drop": "funeral director|funeral home|florist"
+ },
+ "Memorial jewellery & cremation art": {
+  "terms": [
+   "memorial jewellery",
+   "ashes jewellery"
+  ],
+  "keep": "jewel|jewell|glass|art|craft|goldsmith|silversmith",
+  "drop": "pawn|watch repair|funeral director"
+ },
+ "Ash scattering services": {
+  "terms": [
+   "ash scattering",
+   "scattering ashes at sea"
+  ],
+  "keep": "boat|charter|cruise|balloon|firework|aviation|memorial|funeral",
+  "drop": "funeral director$|florist|mason"
+ },
+ "Wills storage services": {
+  "terms": [
+   "will storage",
+   "will safekeeping"
+  ],
+  "keep": "legal services|solicitor|law firm|lawyer|will|storage|safe",
+  "drop": "self-?storage|removal|warehouse"
+ },
+ "Probate genealogists": {
+  "terms": [
+   "probate genealogist",
+   "heir hunters"
+  ],
+  "keep": "genealog|research|legal services|probate|heir",
+  "drop": "library|museum|family history society"
+ },
+ "IHT planning & trust services": {
+  "terms": [
+   "inheritance tax planning",
+   "trust and estate planning"
+  ],
+  "keep": "financial planner|financial consultant|financial advisor|accountant|solicitor|law firm|legal services|trust",
+  "drop": "mortgage broker|insurance agency|bank|marketing"
+ },
+ "Care home placement consultants": {
+  "terms": [
+   "care home advice service",
+   "care placement consultant"
+  ],
+  "keep": "care|consultant|advisory|social",
+  "drop": "nursing home|retirement home|hospital|estate agent"
+ },
+ "Children's bereavement specialists": {
+  "terms": [
+   "children's bereavement support",
+   "child grief counselling"
+  ],
+  "keep": "counselor|counsellor|charity|non-?profit|mental health|children|hospice",
+  "drop": "school|nursery|hospital"
+ },
+ "Property security & insurance": {
+  "terms": [
+   "void property security",
+   "property insurance broker"
+  ],
+  "keep": "security|insurance broker|insurance agency|guard|alarm",
+  "drop": "car insurance|bank|estate agent|locksmith"
+ },
+ "Funeral musicians": {
+  "terms": [
+   "funeral musician",
+   "bagpiper for funerals"
+  ],
+  "keep": "musician|music|band|singer|organ|piper|entertain",
+  "drop": "music shop|instrument|record store|dj service"
  }
 }

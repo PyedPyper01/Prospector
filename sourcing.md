@@ -13,110 +13,52 @@ Put `jude-sourced` in the `source` field of every row you ever load. This never 
 
 ---
 
-## HOW TO SOURCE — everything happens on the website
+## HOW TO SOURCE
 
-Go to **https://postcodeprospector.netlify.app**. You do not need to install anything.
+Everything happens at **https://postcodeprospector.netlify.app** — nothing to install.
 
-Do ONE trade at a time, start to finish, then move to the next.
+Do one trade at a time, all the way through, then start the next.
 
-### 1 · Find suppliers  (step 1 on the page)
+**1 · Search**  (step 1 on the page)
+Pick the trade. Leave **Areas blank** — blank means all 105 postcode areas. Leave districts at 20.
+Press **▶ Search & save to database** and leave the tab open until it finishes.
 
-- **Supplier type** — pick the trade from the dropdown
-- **Areas** — leave BLANK. Blank means all 105 postcode areas
-- **Districts per area** — leave at 20
-- Press **▶ Search & save to database**
+**2 · Load**
+In *Load from the database*, pick the same trade, leave Area blank, untick *Evaluate on import*,
+press **⬇ Load stored firms into the grid**.
 
-It asks you to confirm, then runs. Leave the tab open until it finishes — it saves after
-every area, so if you do have to stop it, nothing already found is lost.
+**3 · Enrich**
+Press **✦ Enrich kept leads**. Anything already crawled is skipped.
+If lots still have no email, press **✉ Find missing emails with Hunter** (it asks how many credits
+to spend — a few hundred per trade).
 
-### 2 · Load them into the grid
+**4 · Vet & Rank**
+Press **⚖ Vet & Rank surviving leads**. This writes the copy AfterLife displays, so it has to be
+done before publishing there.
 
-In **Optional · Load from the database**, pick the same trade, leave Area blank, untick
-**Evaluate on import**, and press **⬇ Load stored firms into the grid**.
+**5 · Publish**
+- AfterLife: set the number to **4**, press **✓ Tick top N in every area**, then **▲ Publish selected to AfterLife**
+- Sales CRM: set the number to **20**, press **✓ Tick top N in every area**, then **▲ Publish selected to the Sales CRM**
 
-### 3 · Enrich  (finds emails and contact names)
+Do AfterLife first, then widen for the CRM. Both are safe to re-run — records update, never duplicate.
 
-Press **✦ Enrich kept leads**. Rows already crawled are skipped automatically.
+**6 · Save**
+Press **⬆ Save the grid to the database**. This keeps the emails, verdicts and write-ups, so the
+trade never needs enriching or vetting again.
 
-If a lot still have no email, press **✉ Find missing emails with Hunter** — it asks how many
-credits to spend and only spends one where Hunter actually holds an address. Hunter's
-allowance is 2,000 a month, so keep it to a few hundred per trade.
-
-### 4 · Vet & Rank  (scores them and writes the marketplace copy)
-
-Press **⚖ Vet & Rank surviving leads**. This is what produces the write-up AfterLife shows,
-so it must be done before publishing there.
-
-### 5 · Send them out
-
-**To AfterLife — the marketplace, so a short list:**
-- Set the number box to **4**, press **✓ Tick top N in every area**
-- Press **▲ Publish selected to AfterLife**
-
-**To the Sales CRM — the outreach pipeline, so a wide list:**
-- Set the number box to **20**, press **✓ Tick top N in every area**
-- Press **▲ Publish selected to the Sales CRM**
-
-Do AfterLife first, then widen the selection for the CRM. Both are safe to re-run: records
-update rather than duplicate.
-
-### 6 · Save the grid back
-
-Press **⬆ Save the grid to the database**. This stores the emails, the verdicts and the
-write-ups, so the trade never has to be enriched or vetted again.
+Then move to the next trade.
 
 ---
 
-## THE TRADES STILL TO DO
+## NOTES
 
-Already finished — do NOT redo these: **Florists · Funeral directors (full service) ·
-Locksmiths (securing property) · Auction houses**
+Some trades are national rather than local — the same handful of firms turn up in every area.
+That is correct, not a fault. Press **⧉ Collapse national firms** before publishing so each one
+becomes a single record covering all its areas.
 
-Work through these, one at a time:
-
-1. Bereavement & pension IFAs
-2. Celebrants
-3. Conveyancing solicitors
-4. Domiciliary & live-in care
-5. Equity release advisers
-6. Estate clearance specialists
-7. Funeral catering & wakes
-8. Funeral photographers
-9. Funeral transport
-10. Funeral videographers & livestream
-11. Garden maintenance (void property)
-12. Home care agencies
-13. House clearance, removals & storage
-14. Kennels & catteries
-15. Life insurance brokers
-16. Memorial benches, trees & plaques
-17. Memorial masons & stonemasons
-18. Natural & woodland burial grounds
-19. Order-of-service printers
-20. Pet rehoming agencies
-21. Private bereavement counsellors
-22. Private cemeteries
-23. Private crematoria
-24. Probate accountants
-25. Probate solicitors
-26. RICS chartered surveyors
-27. Wake venues
-28. Will writers & LPA drafters
-
-Some of them are national rather than local trades — memorial jewellery, ash scattering,
-direct cremation, coffin makers, probate genealogists. Those legitimately return the same
-handful of firms in every area; that is correct, not a fault. Use **⧉ Collapse national
-firms** before publishing so each one becomes a single record covering all its areas.
-
----
-
-## IF SOMETHING LOOKS WRONG
-
-- **A trade returns very few firms** — check you left Areas blank.
-- **"No stored firms match"** — the message lists which areas that trade IS stored in; usually
-  a spelling difference in the Trade box.
-- **A grid holding two trades** — reload the page and load one trade on its own.
-- **Anything else** — tell Dan what the log says rather than pressing on.
+If a trade returns very few firms, check Areas was left blank.
+If a grid ends up holding two trades, reload the page and load one on its own.
+If anything else looks wrong, tell Dan what the log says rather than pressing on.
 
 ## THE AREAS (England & Wales)
 
