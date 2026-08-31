@@ -3990,16 +3990,27 @@ async function publishAfterLife(){
   // Send in CHUNKS. One big request makes AfterLife's importer exceed its function timeout and the
   // gateway returns a 502 with nothing imported — a whole batch lost. Chunking keeps each request
   // well inside the limit, and a failure now costs only that chunk: everything before it is already in.
-  const CHUNK=25; let imported=0, sent=0, failed=0; const allErrors=[];
+  // Measured against the live importer, which has a 26s limit. Each record costs several blob operations —
+  // read, write, and one area-index pointer per area it covers — so a multi-area firm is dearer than a local
+  // one, and chunks slow each other down when run in parallel:
+  //   25 sequential  -> 26.6s, FAILS with a 502
+  //   10 sequential  -> 14.9s, works
+  //   10 x 4 parallel-> one chunk in four still failed at 16.5s
+  //    5 x 4 parallel-> 8/8 chunks OK, slowest 5.3s, and fastest overall
+  // Chunks run in parallel safely because the area index uses a unique key per supplier per area, so
+  // concurrent imports cannot race on a shared blob.
+  const CHUNK=5, PUB_POOL=4; let imported=0, sent=0, failed=0; const allErrors=[];
   try{
-    for(let i=0;i<suppliers.length;i+=CHUNK){
-      const part=suppliers.slice(i,i+CHUNK);
+    const parts=[]; for(let i=0;i<suppliers.length;i+=CHUNK) parts.push(suppliers.slice(i,i+CHUNK));
+    let nextPart=0;
+    const runPart=async(part,idx)=>{
+      {
       try{
         const r=await fetch('/.netlify/functions/publish',{method:'POST',body:JSON.stringify({suppliers:part})});
         let d=null; try{ d=await r.json(); }catch(e){ d=null; }
         if(!r.ok||!d||!d.ok){
           failed+=part.length;
-          log(`  chunk ${Math.floor(i/CHUNK)+1} failed (HTTP ${r.status}${d&&d.error?' — '+d.error:''}) — ${part.length} record(s) not sent.`,'er');
+          log(`  chunk ${idx+1} failed (HTTP ${r.status}${d&&d.error?' — '+d.error:''}) — ${part.length} record(s) not sent.`,'er');
         }else{
           imported+=(d.imported||0); sent+=(d.sent||part.length);
           // Only the ids AfterLife confirms it imported are marked invited. Anything else keeps the
@@ -4008,9 +4019,12 @@ async function publishAfterLife(){
           (d.ids||[]).forEach(id=>publishedIds.add(id));
           if(d.errors&&d.errors.length)allErrors.push(...d.errors);
         }
-      }catch(e){ failed+=part.length; log(`  chunk ${Math.floor(i/CHUNK)+1} error — ${e.message}`,'er'); }
-      if(suppliers.length>CHUNK)log(`  …${Math.min(i+CHUNK,suppliers.length)}/${suppliers.length} sent · ${imported} imported${failed?` · ${failed} failed`:''}`,'wn');
-    }
+      }catch(e){ failed+=part.length; log(`  chunk ${idx+1} error — ${e.message}`,'er'); }
+      }
+    };
+    const pubWorker=async()=>{ while(nextPart<parts.length){ const i=nextPart++; await runPart(parts[i],i);
+      log(`  …${imported+failed}/${suppliers.length} done · ${imported} imported${failed?` · ${failed} failed`:''}`,'wn'); } };
+    await Promise.all(Array.from({length:Math.min(PUB_POOL,parts.length)},()=>pubWorker()));
     // stamp 'invited' onto the rows whose record AfterLife actually accepted
     if(publishedIds.size){
       const byId=new Map(); suppliers.forEach((rec,ix)=>byId.set(rec.id,ix));
