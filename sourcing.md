@@ -13,76 +13,110 @@ Put `jude-sourced` in the `source` field of every row you ever load. This never 
 
 ---
 
-## HOW TO SOURCE — one command per trade
+## HOW TO SOURCE — everything happens on the website
 
-The sourcing runner does all of this for you. Do not hand-search; you will not match it.
+Go to **https://postcodeprospector.netlify.app**. You do not need to install anything.
 
-**Set up once:**
+Do ONE trade at a time, start to finish, then move to the next.
 
-```bash
-git clone https://github.com/PyedPyper01/Prospector.git
-cd Prospector/sourcing
-```
+### 1 · Find suppliers  (step 1 on the page)
 
-**Then, per trade:**
+- **Supplier type** — pick the trade from the dropdown
+- **Areas** — leave BLANK. Blank means all 105 postcode areas
+- **Districts per area** — leave at 20
+- Press **▶ Search & save to database**
 
-```bash
-MAX_OUTCODES=20 python3 national.py "Celebrants" AL B BA BB BD BH BL BN BR BS
-```
+It asks you to confirm, then runs. Leave the tab open until it finishes — it saves after
+every area, so if you do have to stop it, nothing already found is lost.
 
-Trade name in quotes, exactly as spelled in the list below, then the postcode areas. Work in batches of ten
-areas or so. It prints what it found per area and writes straight to the shared store as it goes, so an
-interruption costs nothing — just re-run and it skips what is already held.
+### 2 · Load them into the grid
 
-**`MAX_OUTCODES` is your budget dial.** It is one search credit per outcode per area. 20 covers most areas
-completely; where an area has more, the run says so explicitly — `B: outcodes 1-20 of 38 (capped: 18 further
-outcodes not queried)` — and you finish it with `SKIP_OUTCODES=20 MAX_OUTCODES=20` on a second pass.
+In **Optional · Load from the database**, pick the same trade, leave Area blank, untick
+**Evaluate on import**, and press **⬇ Load stored firms into the grid**.
 
-### What it does for you
+### 3 · Enrich  (finds emails and contact names)
 
-- Searches Google Maps around **every outcode centroid** in the area, not one point. This is the whole game:
-  one query per area finds a fraction of what exists, because Maps ranks rather than lists.
-- Sends a `location` with every query. Without it the search silently falls back to the United States —
-  Liverpool's coordinates returned Brooklyn and Cambridge, Ohio on different calls.
-- Keeps only rows whose **Google category** matches the trade, using per-trade lists written from live samples.
-- Keeps only rows whose **postcode area matches** the one you asked for.
-- **Refuses any row without a website.**
-- Skips firms already stored, matching on domain.
-- Stops loudly if the search credits run out, rather than reporting empty areas.
+Press **✦ Enrich kept leads**. Rows already crawled are skipped automatically.
 
-### Trades the runner covers
+If a lot still have no email, press **✉ Find missing emails with Hunter** — it asks how many
+credits to spend and only spends one where Hunter actually holds an address. Hunter's
+allowance is 2,000 a month, so keep it to a few hundred per trade.
 
-Florists · Funeral directors (full service) · Celebrants · Funeral catering & wakes · Wake venues ·
-Funeral photographers · Funeral videographers & livestream · Order-of-service printers · Funeral transport ·
-Memorial masons & stonemasons · Memorial benches, trees & plaques · Private cemeteries ·
-Natural & woodland burial grounds · Private crematoria · Probate solicitors · Conveyancing solicitors ·
-Probate accountants · Will writers & LPA drafters · RICS chartered surveyors · Estate clearance specialists ·
-House clearance, removals & storage · Auction houses · Garden maintenance (void property) ·
-Locksmiths (securing property) · Bereavement & pension IFAs · Life insurance brokers · Equity release advisers ·
-Home care agencies · Domiciliary & live-in care · Private bereavement counsellors · Kennels & catteries ·
-Pet rehoming agencies
+### 4 · Vet & Rank  (scores them and writes the marketplace copy)
 
-**Florists is already done nationally — start anywhere else.**
+Press **⚖ Vet & Rank surviving leads**. This is what produces the write-up AfterLife shows,
+so it must be done before publishing there.
 
-### Trades the runner does NOT cover
+### 5 · Send them out
 
-These are national, tiny, or register-based, and a per-area Maps sweep returns noise. Source them by hand from
-the trade body or register named in the table further down:
+**To AfterLife — the marketplace, so a short list:**
+- Set the number box to **4**, press **✓ Tick top N in every area**
+- Press **▲ Publish selected to AfterLife**
 
-Direct cremation specialists · Repatriation specialists · Embalming specialists · Custom coffin makers ·
-Memorial jewellery & cremation art · Ash scattering services · Wills storage services · Probate genealogists ·
-IHT planning & trust services · Care home placement consultants · Children's bereavement specialists ·
-Property security & insurance · Funeral musicians
+**To the Sales CRM — the outreach pipeline, so a wide list:**
+- Set the number box to **20**, press **✓ Tick top N in every area**
+- Press **▲ Publish selected to the Sales CRM**
 
-For those, and for filling gaps the runner leaves: enumerate first (directories state their totals; local
-press "best <trade> in <town>" pieces republish Google's ratings), then search, then resolve each name to its
-website with a direct search. Never conclude a firm has no website without searching its name — that mistake
-has cost us real firms. Yell and Thomson Local return 403 to automated fetches; don't bother.
+Do AfterLife first, then widen the selection for the CRM. Both are safe to re-run: records
+update rather than duplicate.
 
-### Do not clear anything
+### 6 · Save the grid back
 
-The store upserts on name+area and de-duplicates on domain, so re-running a trade improves the rows rather
-than duplicating them. There is never a reason to empty it first.
+Press **⬆ Save the grid to the database**. This stores the emails, the verdicts and the
+write-ups, so the trade never has to be enriched or vetted again.
+
+---
+
+## THE TRADES STILL TO DO
+
+Already finished — do NOT redo these: **Florists · Funeral directors (full service) ·
+Locksmiths (securing property) · Auction houses**
+
+Work through these, one at a time:
+
+1. Bereavement & pension IFAs
+2. Celebrants
+3. Conveyancing solicitors
+4. Domiciliary & live-in care
+5. Equity release advisers
+6. Estate clearance specialists
+7. Funeral catering & wakes
+8. Funeral photographers
+9. Funeral transport
+10. Funeral videographers & livestream
+11. Garden maintenance (void property)
+12. Home care agencies
+13. House clearance, removals & storage
+14. Kennels & catteries
+15. Life insurance brokers
+16. Memorial benches, trees & plaques
+17. Memorial masons & stonemasons
+18. Natural & woodland burial grounds
+19. Order-of-service printers
+20. Pet rehoming agencies
+21. Private bereavement counsellors
+22. Private cemeteries
+23. Private crematoria
+24. Probate accountants
+25. Probate solicitors
+26. RICS chartered surveyors
+27. Wake venues
+28. Will writers & LPA drafters
+
+Some of them are national rather than local trades — memorial jewellery, ash scattering,
+direct cremation, coffin makers, probate genealogists. Those legitimately return the same
+handful of firms in every area; that is correct, not a fault. Use **⧉ Collapse national
+firms** before publishing so each one becomes a single record covering all its areas.
+
+---
+
+## IF SOMETHING LOOKS WRONG
+
+- **A trade returns very few firms** — check you left Areas blank.
+- **"No stored firms match"** — the message lists which areas that trade IS stored in; usually
+  a spelling difference in the Trade box.
+- **A grid holding two trades** — reload the page and load one trade on its own.
+- **Anything else** — tell Dan what the log says rather than pressing on.
 
 ## THE AREAS (England & Wales)
 
