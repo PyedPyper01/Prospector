@@ -3288,20 +3288,11 @@ async function vetRank(){
   if(!LEADS.length){log('Run a sweep first — Vet & Rank scores the surviving leads.','er');return;}
   if(running)return;
   running=true;$('run').disabled=true;$('vetBtn').disabled=true;setStats();
+  // Released in the finally below. A throw in here used to leave running=true, greying out both ✦ Enrich and
+  // ⚖ Vet & Rank until the page was reloaded — which is what a stray ReferenceError did tonight.
+  try{
   const blocklist=parseConsolidators();
   const request=($('term').value||'').split('\n').join(' ').slice(0,400);
-  const noSite=LEADS.filter(l=>!l.siteText&&(!l.alVerdict||l.alVerdict==='UNVETTED')).length;
-  if(noSite)log(`Vet & Rank: ${noSite} of ${LEADS.length} lead(s) have no crawled site text — run ✦ Enrich first for the fullest independence read. Proceeding on available evidence.`,'wn');
-  log(`Vet & Rank: Claude is assessing ${toVet.length} leads — independence · bereavement fit · quality · verdict (blocklist has ${blocklist.length} consolidators)…`,'wn');
-  // BUG-1 FIX: smaller batches (12, was 25) so the Claude call fits the function budget; read the response
-  // as TEXT then JSON.parse in a try/catch (so a timeout HTML page / truncated body doesn't crash the run,
-  // and we can LOG the real body); retry with backoff; a batch that keeps failing leaves its leads UNVETTED
-  // (still in the grid) instead of aborting the whole ranking.
-  // BACK TO 5. A batch of 10 was timed at 15s and looked safe — but that test used two-line synthetic site
-  // text. Real leads carry up to 1,500 characters EACH after Enrich, so 10 per call overruns Netlify's 26s
-  // limit and every batch returns a 504. That is what the original comment here warned about, and the
-  // benchmark that overrode it was not representative of the data. 5 stays well inside the limit.
-  const BATCH_SZ=5;
   // Vet only what has NOT been vetted. This batched every row in the grid regardless, so a trade reloaded
   // from the database — verdicts and write-ups restored — was sent through the model again from scratch.
   // That is the single most expensive thing this app can do, and it was doing it on every reload.
@@ -3314,6 +3305,18 @@ async function vetRank(){
     log('Every lead in the grid is already vetted — nothing to do. Tick your picks and publish.','ok');
     running=false; $('vetBtn').disabled=false; $('run').disabled=false; setStats(); render(); return;
   }
+  const noSite=LEADS.filter(l=>!l.siteText&&(!l.alVerdict||l.alVerdict==='UNVETTED')).length;
+  if(noSite)log(`Vet & Rank: ${noSite} of ${LEADS.length} lead(s) have no crawled site text — run ✦ Enrich first for the fullest independence read. Proceeding on available evidence.`,'wn');
+  log(`Vet & Rank: Claude is assessing ${toVet.length} leads — independence · bereavement fit · quality · verdict (blocklist has ${blocklist.length} consolidators)…`,'wn');
+  // BUG-1 FIX: smaller batches (12, was 25) so the Claude call fits the function budget; read the response
+  // as TEXT then JSON.parse in a try/catch (so a timeout HTML page / truncated body doesn't crash the run,
+  // and we can LOG the real body); retry with backoff; a batch that keeps failing leaves its leads UNVETTED
+  // (still in the grid) instead of aborting the whole ranking.
+  // BACK TO 5. A batch of 10 was timed at 15s and looked safe — but that test used two-line synthetic site
+  // text. Real leads carry up to 1,500 characters EACH after Enrich, so 10 per call overruns Netlify's 26s
+  // limit and every batch returns a 504. That is what the original comment here warned about, and the
+  // benchmark that overrode it was not representative of the data. 5 stays well inside the limit.
+  const BATCH_SZ=5;
   const batches=[];for(let i=0;i<toVet.length;i+=BATCH_SZ)batches.push(toVet.slice(i,i+BATCH_SZ));
   let done=0,ok=false,failedBatches=0,noKey=false;
   const callVet=async(batch)=>{
@@ -3439,6 +3442,9 @@ async function vetRank(){
     log(`Ranked ${keepers} keeper(s) (sorted best-first in the # column). Nothing is selected — YOU choose. Tick the ones you want in the ✓ column, then ▲ Publish selected: we'll write up each pick and send them to AfterLife. (Optional: "Select top N" pre-ticks the top N by our rank if you'd rather start from that.)`,'ok');
   }
   running=false;$('run').disabled=false;setStats();render();
+  }finally{
+    running=false; $('run').disabled=false; $('vetBtn').disabled=false; setStats();
+  }
 }
 
 /* ---------- ONE RECORD PER FIRM: identity, footprint, tier ----------
