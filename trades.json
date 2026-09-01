@@ -1,338 +1,338 @@
 {
- "Florists": {
-  "terms": [
-   "florist"
-  ],
-  "keep": "florist|flower",
-  "drop": "supermarket|takeaway|garden cent|department store|discount store|post office|tyre|antique|carpet|lighting|cafe|pet groom|reflex|wedding service|celebrant"
- },
- "Funeral directors (full service)": {
-  "terms": [
-   "funeral director"
-  ],
-  "keep": "funeral director|funeral home|cremation service",
-  "drop": "corporate office|florist|mason|monument|cemetery"
- },
- "Celebrants": {
-  "terms": [
-   "funeral celebrant",
-   "celebrant"
-  ],
-  "keep": "celebrant",
-  "drop": "funeral director|funeral home|wedding venue|photograph"
- },
- "Funeral catering & wakes": {
-  "terms": [
-   "caterer",
-   "catering company"
-  ],
-  "keep": "caterer|catering|hog roast|buffet",
-  "drop": "supermarket|takeaway|restaurant$|grocery"
- },
- "Wake venues": {
-  "terms": [
-   "function room hire"
-  ],
-  "keep": "events? venue|function room|community cent|pub|hotel|social club",
-  "drop": "wedding venue|nightclub"
- },
- "Funeral photographers": {
-  "terms": [
-   "photographer"
-  ],
-  "keep": "photographer|photography studio|photography service|portrait studio",
-  "drop": "aerial|drone|commercial photographer|photo lab|school photo"
- },
- "Funeral videographers & livestream": {
-  "terms": [
-   "videographer"
-  ],
-  "keep": "video production|videograph",
-  "drop": "wedding photographer|aerial|dj service|photography service"
- },
- "Order-of-service printers": {
-  "terms": [
-   "printing company",
-   "funeral stationery printer"
-  ],
-  "keep": "print shop|commercial printer|copy shop|digital printing|printing",
-  "drop": "shipping and mailing|graphic design|photo lab|sign"
- },
- "Funeral transport": {
-  "terms": [
-   "limousine hire"
-  ],
-  "keep": "limousine|chauffeur",
-  "drop": "taxi service|bus|coach hire|car rental"
- },
- "Memorial masons & stonemasons": {
-  "terms": [
-   "memorial mason",
-   "stonemason"
-  ],
-  "keep": "mason|monument|stone|memorial|headstone|engrav",
-  "drop": "funeral director|funeral home|worktop|kitchen|bathroom|tiling|paving|driveway|fireplace"
- },
- "Memorial benches, trees & plaques": {
-  "terms": [
-   "memorial bench"
-  ],
-  "keep": "monument maker|memorial$|engrav|sign",
-  "drop": "historical landmark|park$|sculpture|memorial park|tourist attraction|cemetery"
- },
- "Private cemeteries": {
-  "terms": [
-   "cemetery"
-  ],
-  "keep": "^cemetery$",
-  "drop": "military|pet cemetery|place of worship|historical landmark|park"
- },
- "Natural & woodland burial grounds": {
-  "terms": [
-   "natural burial ground",
-   "woodland burial"
-  ],
-  "keep": "cemetery|burial",
-  "drop": "military|place of worship|historical landmark"
- },
- "Private crematoria": {
-  "terms": [
-   "crematorium"
-  ],
-  "keep": "cremation|crematorium",
-  "drop": "bus stop|pet funeral|pet cremation|funeral director|funeral home|cemetery"
- },
- "Probate solicitors": {
-  "terms": [
-   "probate solicitor",
-   "wills and probate solicitor"
-  ],
-  "keep": "law firm|legal services|lawyer|attorney|solicitor|conveyancer",
-  "drop": "personal injury|immigration|criminal|marketing|recruit"
- },
- "Conveyancing solicitors": {
-  "terms": [
-   "conveyancing solicitor"
-  ],
-  "keep": "law firm|legal services|lawyer|attorney|conveyancer|solicitor",
-  "drop": "personal injury|immigration|criminal|marketing|recruit"
- },
- "Probate accountants": {
-  "terms": [
-   "accountant"
-  ],
-  "keep": "accountant|accounting firm|chartered accountant",
-  "drop": "tax preparation service|bookkeep|payroll|marketing"
- },
- "Will writers & LPA drafters": {
-  "terms": [
-   "will writing service"
-  ],
-  "keep": "legal services|estate planning|lawyer|law firm|solicitor|will",
-  "drop": "non-profit|charity|personal injury|recruit"
- },
- "RICS chartered surveyors": {
-  "terms": [
-   "chartered surveyor"
-  ],
-  "keep": "surveyor",
-  "drop": "real estate agent|estate agent|structural engineer|architect"
- },
- "Estate clearance specialists": {
-  "terms": [
-   "house clearance",
-   "probate house clearance"
-  ],
-  "keep": "house clearance|clearance service",
-  "drop": "waste-?management|second-?hand furniture|charity shop|skip hire"
- },
- "House clearance, removals & storage": {
-  "terms": [
-   "removals company"
-  ],
-  "keep": "mover|moving and storage|removal|self-?storage",
-  "drop": "transportation service|courier|haulage|van rental"
- },
- "Auction houses": {
-  "terms": [
-   "auction house"
-  ],
-  "keep": "auction",
-  "drop": "auto auction|car auction|house clearance|real estate auctioneer"
- },
- "Garden maintenance (void property)": {
-  "terms": [
-   "garden maintenance"
-  ],
-  "keep": "gardener|landscap|lawn care|arborist|tree surgeon",
-  "drop": "pressure washing|garden cent|nursery|florist"
- },
- "Locksmiths (securing property)": {
-  "terms": [
-   "locksmith"
-  ],
-  "keep": "locksmith|lock",
-  "drop": "auto ?locksmith|car key|cell phone|do-it-yourself|hardware|shoe repair"
- },
- "Bereavement & pension IFAs": {
-  "terms": [
-   "independent financial adviser"
-  ],
-  "keep": "financial planner|financial consultant|financial advisor|financial adviser|investment service|wealth",
-  "drop": "marketing agency|financial institution|bank|^consultant$|insurance agency|mortgage lender"
- },
- "Life insurance brokers": {
-  "terms": [
-   "insurance broker"
-  ],
-  "keep": "insurance broker|insurance agency",
-  "drop": "mortgage broker|insurance company|car insurance|bank"
- },
- "Equity release advisers": {
-  "terms": [
-   "equity release adviser"
-  ],
-  "keep": "mortgage broker|financial consultant|financial planner|financial advisor",
-  "drop": "mortgage lender|financial institution|business to business|bank|estate agent"
- },
- "Home care agencies": {
-  "terms": [
-   "home care agency"
-  ],
-  "keep": "home health care|home care|nursing agency|care agency",
-  "drop": "nursing home|retirement home|hospital|pharmacy"
- },
- "Domiciliary & live-in care": {
-  "terms": [
-   "domiciliary care",
-   "live-in care"
-  ],
-  "keep": "home health care|home care|nursing agency|care agency",
-  "drop": "nursing home|retirement home|hospital|pharmacy"
- },
- "Private bereavement counsellors": {
-  "terms": [
-   "bereavement counsellor",
-   "grief counselling"
-  ],
-  "keep": "counselor|counsellor|psychotherapist|mental health",
-  "drop": "non-?profit|charity|hospital|nhs|life coach|hypno"
- },
- "Kennels & catteries": {
-  "terms": [
-   "boarding kennels",
-   "cattery"
-  ],
-  "keep": "pet boarding|kennel|cattery|dog day care",
-  "drop": "pet sitter|veterinar|pet shop|groom"
- },
- "Pet rehoming agencies": {
-  "terms": [
-   "animal rescue centre"
-  ],
-  "keep": "animal rescue|animal shelter|pet adoption",
-  "drop": "thrift store|charity shop|veterinar|pharmacy|pet shop"
- },
- "Direct cremation specialists": {
-  "terms": [
-   "direct cremation"
-  ],
-  "keep": "funeral director|funeral home|cremation|crematorium",
-  "drop": "cemetery|florist|mason|monument|pet "
- },
- "Repatriation specialists": {
-  "terms": [
-   "funeral repatriation"
-  ],
-  "keep": "funeral director|funeral home|repatriation|shipping|freight",
-  "drop": "removal|storage|courier|taxi"
- },
- "Embalming specialists": {
-  "terms": [
-   "embalmer",
-   "embalming services"
-  ],
-  "keep": "funeral director|funeral home|embalm|mortuary",
-  "drop": "florist|mason|cemetery"
- },
- "Custom coffin makers": {
-  "terms": [
-   "coffin maker",
-   "bespoke coffins"
-  ],
-  "keep": "coffin|casket|funeral supply|woodwork|carpenter|joiner",
-  "drop": "funeral director|funeral home|florist"
- },
- "Memorial jewellery & cremation art": {
-  "terms": [
-   "memorial jewellery",
-   "ashes jewellery"
-  ],
-  "keep": "jewel|jewell|glass|art|craft|goldsmith|silversmith",
-  "drop": "pawn|watch repair|funeral director"
- },
- "Ash scattering services": {
-  "terms": [
-   "ash scattering",
-   "scattering ashes at sea"
-  ],
-  "keep": "boat|charter|cruise|balloon|firework|aviation|memorial|funeral",
-  "drop": "funeral director$|florist|mason"
- },
- "Wills storage services": {
-  "terms": [
-   "will storage",
-   "will safekeeping"
-  ],
-  "keep": "legal services|solicitor|law firm|lawyer|will|storage|safe",
-  "drop": "self-?storage|removal|warehouse"
- },
- "Probate genealogists": {
-  "terms": [
-   "probate genealogist",
-   "heir hunters"
-  ],
-  "keep": "genealog|research|legal services|probate|heir",
-  "drop": "library|museum|family history society"
- },
- "IHT planning & trust services": {
-  "terms": [
-   "inheritance tax planning",
-   "trust and estate planning"
-  ],
-  "keep": "financial planner|financial consultant|financial advisor|accountant|solicitor|law firm|legal services|trust",
-  "drop": "mortgage broker|insurance agency|bank|marketing"
- },
- "Care home placement consultants": {
-  "terms": [
-   "care home advice service",
-   "care placement consultant"
-  ],
-  "keep": "care|consultant|advisory|social",
-  "drop": "nursing home|retirement home|hospital|estate agent"
- },
- "Children's bereavement specialists": {
-  "terms": [
-   "children's bereavement support",
-   "child grief counselling"
-  ],
-  "keep": "counselor|counsellor|charity|non-?profit|mental health|children|hospice",
-  "drop": "school|nursery|hospital"
- },
- "Property security & insurance": {
-  "terms": [
-   "void property security",
-   "property insurance broker"
-  ],
-  "keep": "security|insurance broker|insurance agency|guard|alarm",
-  "drop": "car insurance|bank|estate agent|locksmith"
- },
- "Funeral musicians": {
-  "terms": [
-   "funeral musician",
-   "bagpiper for funerals"
-  ],
-  "keep": "musician|music|band|singer|organ|piper|entertain",
-  "drop": "music shop|instrument|record store|dj service"
- }
+  "Florists": {
+    "terms": [
+      "florist"
+    ],
+    "keep": "florist|flower",
+    "drop": "supermarket|takeaway|garden cent|department store|discount store|post office|tyre|antique|carpet|lighting|cafe|pet groom|reflex|wedding service|celebrant"
+  },
+  "Funeral directors (full service)": {
+    "terms": [
+      "funeral director"
+    ],
+    "keep": "funeral director|funeral home|cremation service",
+    "drop": "corporate office|florist|mason|monument|cemetery"
+  },
+  "Celebrants": {
+    "terms": [
+      "funeral celebrant",
+      "celebrant"
+    ],
+    "keep": "celebrant",
+    "drop": "funeral director|funeral home|wedding venue|photograph"
+  },
+  "Funeral catering & wakes": {
+    "terms": [
+      "caterer",
+      "catering company"
+    ],
+    "keep": "caterer|catering|hog roast|buffet",
+    "drop": "supermarket|takeaway|restaurant$|grocery"
+  },
+  "Wake venues": {
+    "terms": [
+      "function room hire"
+    ],
+    "keep": "events? venue|function room|community cent|pub|hotel|social club",
+    "drop": "wedding venue|nightclub"
+  },
+  "Funeral photographers": {
+    "terms": [
+      "photographer"
+    ],
+    "keep": "photographer|photography studio|photography service|portrait studio",
+    "drop": "aerial|drone|commercial photographer|photo lab|school photo"
+  },
+  "Funeral videographers & livestream": {
+    "terms": [
+      "videographer"
+    ],
+    "keep": "video production|videograph",
+    "drop": "wedding photographer|aerial|dj service|photography service"
+  },
+  "Order-of-service printers": {
+    "terms": [
+      "printing company",
+      "funeral stationery printer"
+    ],
+    "keep": "print shop|commercial printer|copy shop|digital printing|printing",
+    "drop": "shipping and mailing|graphic design|photo lab|sign"
+  },
+  "Funeral transport": {
+    "terms": [
+      "limousine hire"
+    ],
+    "keep": "limousine|chauffeur",
+    "drop": "taxi service|bus|coach hire|car rental"
+  },
+  "Memorial masons & stonemasons": {
+    "terms": [
+      "memorial mason",
+      "stonemason"
+    ],
+    "keep": "mason|monument|stone|memorial|headstone|engrav",
+    "drop": "funeral director|funeral home|worktop|kitchen|bathroom|tiling|paving|driveway|fireplace"
+  },
+  "Memorial benches, trees & plaques": {
+    "terms": [
+      "memorial bench"
+    ],
+    "keep": "monument maker|memorial$|engrav|sign",
+    "drop": "historical landmark|park$|sculpture|memorial park|tourist attraction|cemetery"
+  },
+  "Private cemeteries": {
+    "terms": [
+      "cemetery"
+    ],
+    "keep": "^cemetery$",
+    "drop": "military|pet cemetery|place of worship|historical landmark|park"
+  },
+  "Natural & woodland burial grounds": {
+    "terms": [
+      "natural burial ground",
+      "woodland burial"
+    ],
+    "keep": "cemetery|burial",
+    "drop": "military|place of worship|historical landmark"
+  },
+  "Private crematoria": {
+    "terms": [
+      "crematorium"
+    ],
+    "keep": "cremation|crematorium",
+    "drop": "bus stop|pet funeral|pet cremation|funeral director|funeral home|cemetery"
+  },
+  "Probate solicitors": {
+    "terms": [
+      "probate solicitor",
+      "wills and probate solicitor"
+    ],
+    "keep": "law firm|legal services|lawyer|attorney|solicitor|conveyancer",
+    "drop": "personal injury|immigration|criminal|marketing|recruit"
+  },
+  "Conveyancing solicitors": {
+    "terms": [
+      "conveyancing solicitor"
+    ],
+    "keep": "law firm|legal services|lawyer|attorney|conveyancer|solicitor",
+    "drop": "personal injury|immigration|criminal|marketing|recruit"
+  },
+  "Probate accountants": {
+    "terms": [
+      "accountant"
+    ],
+    "keep": "accountant|accounting firm|chartered accountant",
+    "drop": "tax preparation service|bookkeep|payroll|marketing"
+  },
+  "Will writers & LPA drafters": {
+    "terms": [
+      "will writing service"
+    ],
+    "keep": "legal services|estate planning|lawyer|law firm|solicitor|will",
+    "drop": "non-profit|charity|personal injury|recruit"
+  },
+  "RICS chartered surveyors": {
+    "terms": [
+      "chartered surveyor"
+    ],
+    "keep": "surveyor",
+    "drop": "real estate agent|estate agent|structural engineer|architect"
+  },
+  "Estate clearance specialists": {
+    "terms": [
+      "house clearance",
+      "probate house clearance"
+    ],
+    "keep": "house clearance|clearance service",
+    "drop": "waste-?management|second-?hand furniture|charity shop|skip hire"
+  },
+  "House clearance, removals & storage": {
+    "terms": [
+      "removals company"
+    ],
+    "keep": "mover|moving and storage|removal|self-?storage",
+    "drop": "transportation service|courier|haulage|van rental"
+  },
+  "Auction houses": {
+    "terms": [
+      "auction house"
+    ],
+    "keep": "auction",
+    "drop": "auto auction|car auction|house clearance|real estate auctioneer"
+  },
+  "Garden maintenance (void property)": {
+    "terms": [
+      "garden maintenance"
+    ],
+    "keep": "gardener|landscap|lawn care|arborist|tree surgeon",
+    "drop": "pressure washing|garden cent|nursery|florist"
+  },
+  "Locksmiths (securing property)": {
+    "terms": [
+      "locksmith"
+    ],
+    "keep": "locksmith|lock",
+    "drop": "auto ?locksmith|car key|cell phone|do-it-yourself|hardware|shoe repair"
+  },
+  "Bereavement & pension IFAs": {
+    "terms": [
+      "independent financial adviser"
+    ],
+    "keep": "financial planner|financial consultant|financial advisor|financial adviser|investment service|wealth",
+    "drop": "marketing agency|financial institution|bank|^consultant$|insurance agency|mortgage lender"
+  },
+  "Life insurance brokers": {
+    "terms": [
+      "insurance broker"
+    ],
+    "keep": "insurance broker|insurance agency",
+    "drop": "mortgage broker|insurance company|car insurance|bank"
+  },
+  "Equity release advisers": {
+    "terms": [
+      "equity release adviser"
+    ],
+    "keep": "mortgage broker|financial consultant|financial planner|financial advisor",
+    "drop": "mortgage lender|financial institution|business to business|bank|estate agent"
+  },
+  "Home care agencies": {
+    "terms": [
+      "home care agency"
+    ],
+    "keep": "home health care|home care|nursing agency|care agency",
+    "drop": "nursing home|retirement home|hospital|pharmacy"
+  },
+  "Domiciliary & live-in care": {
+    "terms": [
+      "domiciliary care",
+      "live-in care"
+    ],
+    "keep": "home health care|home care|nursing agency|care agency",
+    "drop": "nursing home|retirement home|hospital|pharmacy"
+  },
+  "Private bereavement counsellors": {
+    "terms": [
+      "bereavement counsellor",
+      "grief counselling"
+    ],
+    "keep": "counselor|counsellor|psychotherapist|mental health",
+    "drop": "non-?profit|charity|hospital|nhs|life coach|hypno"
+  },
+  "Kennels & catteries": {
+    "terms": [
+      "boarding kennels",
+      "cattery"
+    ],
+    "keep": "pet boarding|kennel|cattery|dog day care",
+    "drop": "pet sitter|veterinar|pet shop|groom"
+  },
+  "Pet rehoming agencies": {
+    "terms": [
+      "animal rescue centre"
+    ],
+    "keep": "animal rescue|animal shelter|pet adoption",
+    "drop": "thrift store|charity shop|veterinar|pharmacy|pet shop"
+  },
+  "Direct cremation specialists": {
+    "terms": [
+      "direct cremation"
+    ],
+    "keep": "funeral director|funeral home|cremation|crematorium",
+    "drop": "cemetery|florist|mason|monument|pet "
+  },
+  "Repatriation specialists": {
+    "terms": [
+      "funeral repatriation"
+    ],
+    "keep": "funeral director|funeral home|repatriation|shipping|freight",
+    "drop": "removal|storage|courier|taxi"
+  },
+  "Embalming specialists": {
+    "terms": [
+      "embalmer",
+      "embalming services"
+    ],
+    "keep": "funeral director|funeral home|embalm|mortuary",
+    "drop": "florist|mason|cemetery"
+  },
+  "Custom coffin makers": {
+    "terms": [
+      "coffin maker",
+      "bespoke coffins"
+    ],
+    "keep": "coffin|casket|funeral supply|woodwork|carpenter|joiner",
+    "drop": "funeral director|funeral home|florist"
+  },
+  "Memorial jewellery & cremation art": {
+    "terms": [
+      "memorial jewellery",
+      "ashes jewellery"
+    ],
+    "keep": "jewel|jewell|glass|art|craft|goldsmith|silversmith",
+    "drop": "pawn|watch repair|funeral director"
+  },
+  "Ash scattering services": {
+    "terms": [
+      "ash scattering",
+      "scattering ashes at sea"
+    ],
+    "keep": "boat|charter|cruise|balloon|firework|aviation|memorial|funeral",
+    "drop": "funeral director$|florist|mason"
+  },
+  "Wills storage services": {
+    "terms": [
+      "will storage",
+      "will safekeeping"
+    ],
+    "keep": "legal services|solicitor|law firm|lawyer|will|storage|safe",
+    "drop": "self-?storage|removal|warehouse"
+  },
+  "Probate genealogists": {
+    "terms": [
+      "probate genealogist",
+      "heir hunters"
+    ],
+    "keep": "genealog|research|legal services|probate|heir",
+    "drop": "library|museum|family history society"
+  },
+  "IHT planning & trust services": {
+    "terms": [
+      "inheritance tax planning",
+      "trust and estate planning"
+    ],
+    "keep": "financial planner|financial consultant|financial advisor|accountant|solicitor|law firm|legal services|trust",
+    "drop": "mortgage broker|insurance agency|bank|marketing"
+  },
+  "Care home placement consultants": {
+    "terms": [
+      "care home advice service",
+      "care placement consultant"
+    ],
+    "keep": "care|consultant|advisory|social",
+    "drop": "^(?!.*(consultant|consulting|advis)).*(nursing home|retirement home|hospital|estate agent|home health|home ?care|care agency|nursing agency|domiciliary|live-?in care|supported living|care home|assisted living|hospice|day ?care|child ?care|pharmacy|physiotherap|dentist|veterinar)"
+  },
+  "Children's bereavement specialists": {
+    "terms": [
+      "children's bereavement support",
+      "child grief counselling"
+    ],
+    "keep": "counselor|counsellor|charity|non-?profit|mental health|children|hospice",
+    "drop": "school|nursery|hospital"
+  },
+  "Property security & insurance": {
+    "terms": [
+      "void property security",
+      "property insurance broker"
+    ],
+    "keep": "security|insurance broker|insurance agency|guard|alarm",
+    "drop": "car insurance|bank|estate agent|locksmith"
+  },
+  "Funeral musicians": {
+    "terms": [
+      "funeral musician",
+      "bagpiper for funerals"
+    ],
+    "keep": "musician|music|band|singer|organ|piper|entertain",
+    "drop": "music shop|instrument|record store|dj service"
+  }
 }
