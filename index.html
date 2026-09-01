@@ -1329,6 +1329,35 @@ async function hunterFillEmails(){
   if(btn)btn.disabled=false;
 }
 
+
+/* ---------- tell the operator when the page itself is out of date ----------
+   This app is edited and redeployed constantly, and a tab left open all day keeps running whatever JavaScript
+   it loaded hours ago. That produced repeated "it is still broken" reports against faults already fixed and
+   deployed — the fix was live, the tab was not. The page now watches its own ETag and says so. */
+(function watchForNewBuild(){
+  let mine=null;
+  const check=async()=>{
+    try{
+      const r=await fetch(location.pathname+'?v='+Date.now(),{method:'HEAD',cache:'no-store'});
+      const tag=r.headers.get('etag')||r.headers.get('last-modified');
+      if(!tag) return;
+      if(mine===null){ mine=tag; return; }
+      if(tag!==mine){
+        mine=tag;
+        const bar=document.createElement('div');
+        bar.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;padding:10px 14px;'
+          +'background:#d98324;color:#fff;font:600 14px/1.4 system-ui;text-align:center;cursor:pointer';
+        bar.textContent='A newer version of Postcode Prospector is available — click here to reload. '
+          +'(Your grid will be cleared, so save it first if you have unsaved work.)';
+        bar.onclick=()=>location.reload(true);
+        document.body.appendChild(bar);
+        if(typeof log==='function') log('A newer version of this page is deployed. Reload to pick it up — until you do you are running the older code.','wn');
+      }
+    }catch(e){ /* offline or blocked: never let this break the app */ }
+  };
+  check(); setInterval(check, 180000);   // every three minutes
+})();
+
 /* ---------- BATCH QUEUE: run a matrix of areas × categories unattended (resume · master CSV · webhook) ---------- */
 function allEWAreas(){const m=parseCounties();const s=new Set();Object.values(m).forEach(a=>a.forEach(x=>s.add((x||'').toUpperCase())));return [...s];}
 let BATCH={running:false,stop:false,master:[],done:(()=>{try{return JSON.parse(localStorage.getItem('pp_batch_done')||'[]');}catch(e){return[];}})(),jobs:[]};
