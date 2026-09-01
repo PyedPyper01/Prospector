@@ -2111,7 +2111,9 @@ async function loadFromDatabase(){
           l.alStatus=(m[1]==='EXCLUDE')?'excluded':'approved';
           verdicts++;
         }
-        if(!l.independent && o.independence) l.independent = (o.independence==='independent');
+        // 'Y' / 'N' — the grid renders this with .startsWith('N'), so a boolean here crashes the whole
+        // import with "l.independent.startsWith is not a function" and nothing loads.
+        if(!l.independent && o.independence) l.independent = (o.independence==='independent') ? 'Y' : 'N';
         // A row crawled in the last 60 days does not need crawling again. Sites change slowly, and a dead
         // domain will still be dead.
         if(o.last_verified){
@@ -2188,7 +2190,8 @@ async function saveGridToDatabase(){
     // run purely to fail again — about half of them.
     if(l.enriched || l.siteStatus) put('last_verified', new Date().toISOString().slice(0,10));
     if(l.siteStatus && l.siteStatus!=='ok') put('source_list', 'site:'+l.siteStatus);
-    put('independence', l.independent===true?'independent':(l.independent===false?'not-independent':''));
+    { const iv=String(l.independent==null?'':l.independent).trim().toUpperCase();
+      put('independence', iv.startsWith('Y')?'independent':(iv.startsWith('N')?'not-independent':'')); }
     if(l.alVerdict){
       const tag = `[[AL ${l.alVerdict}`
         + (typeof l.alPriority==='number'?` p${l.alPriority}`:'')
@@ -2847,7 +2850,7 @@ function render(){
       const cls=good?'t-ind':(unknown?'t-q':'t-chain');
       const url=l.regUrl||l.fcaUrl||'';
       return url?`<a href="${url}" target="_blank"><span class="tagx ${cls}">${v}</span></a>`:`<span class="tagx ${cls}">${v}</span>`;})()}</td>
-    <td>${l.independent.startsWith('N')?'<span class="tagx t-chain">chain</span>':l.independent==='Y'?'<span class="tagx t-ind">indep</span>':'<span class="tagx t-q">'+l.independent+'</span>'}</td>
+    <td>${String(l.independent||'').startsWith('N')?'<span class="tagx t-chain">chain</span>':String(l.independent||'')==='Y'?'<span class="tagx t-ind">indep</span>':'<span class="tagx t-q">'+(l.independent||'?')+'</span>'}</td>
     <td class="muted">${l.companyNo||''}</td></tr>`;
   }
   $('results').innerHTML=h+'</tbody></table>';
