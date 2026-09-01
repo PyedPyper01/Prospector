@@ -3561,12 +3561,21 @@ function brevoRow(l){
 /* ---------- publish to the Sales CRM (approval queue on the generator site) ---------- */
 // One lead -> one CRM intake row. Phone and email ARE sent (sales pipeline, not
 // the public directory). vetted marks Vet&Rank provenance; master rows go false.
+// The trade picked for publishing wins here too. Sending to the CRM used to take
+// the label the row was SWEPT under, so re-filing a batch and pressing publish put
+// it back in the queue under the old trade.
+function pickedCatLabel(){
+  const id=(($('pubCategory')&&$('pubCategory').value)||'').trim();
+  if(!id) return '';
+  const hit=(typeof AL_CATEGORIES!=='undefined')?AL_CATEGORIES.find(c=>c.id===id):null;
+  return hit?hit.label:'';
+}
 function crmRow(l,vetted){
   return {
     name:l.name||'', contact:l.contact||'', phone:l.phone||'', emails:l.emails||'',
     website:l.website||'', address:l.address||'', district:l.district||'',
     area:l.batchArea||l.area||'',
-    category_raw:l.pubCatLabel||l.batchCategory||(($('term').value||'').split('\n')[0].trim()),
+    category_raw:pickedCatLabel()||l.pubCatLabel||l.batchCategory||(($('term').value||'').split('\n')[0].trim()),
     rating:l.rating??'', reviews:l.reviews||'', independent:l.independent||'',
     register:l.register||l.memberships||'', reg_status:l.fca||l.reg||l.regStatus||'', frn:l.frn||'',
     companyNo:l.companyNo||'', placeId:l.placeId||'',
@@ -3865,10 +3874,17 @@ async function publishAfterLife(){
   const needGlobal=approve.some(l=>!l.pubCatId);
   if(needGlobal&&!catId){log('Pick the AfterLife category first — the dropdown just above the allocation. It must match a marketplace category, or the leads will never appear. (Manual rows with a mapped CATEGORY publish as that automatically.)','er');const s=$('pubCategory');if(s)s.focus();return;}
   const catLabel=(AL_CATEGORIES.find(c=>c.id===catId)||{}).label||catId;
-  const selCats=[...new Set(approve.map(l=>l.pubCatLabel||catLabel).filter(Boolean))];
+  const selCats=[...new Set(approve.map(l=>catId?catLabel:(l.pubCatLabel||catLabel)).filter(Boolean))];
+  // Say plainly when the picker is about to override what the rows already carry —
+  // publishing under the wrong trade is invisible until it reaches the marketplace.
+  const overridden=catId?approve.filter(l=>l.pubCatId&&l.pubCatId!==catId).length:0;
   const catDisplay=selCats.length===1?selCats[0]:`${selCats.length} categories (${selCats.slice(0,4).join(', ')})`;
   const exSel=approve.filter(l=>l.alVerdict==='EXCLUDE').length;
-  if(!confirm(`Publish ${approve.length} selected lead(s) to afterlife.ltd as “${catDisplay}”?`+(exSel?`\n\n⚠ ${exSel} of these were EXCLUDED by vetting (group-owned / wrong trade). Publish anyway?`:'')+`\n\nThey arrive as “pending” for you to approve there. Phone & website are withheld (sent as null) — families only reach firms through AfterLife.`))return;
+  if(!confirm(`Publish ${approve.length} selected lead(s) to afterlife.ltd as “${catDisplay}”?`
+    +(overridden?`\n\n⚠ ${overridden} of these were swept under a DIFFERENT trade and will be published as “${catLabel}” because that is what you picked.`:'')
+    +(exSel?`\n\n⚠ ${exSel} of these were EXCLUDED by vetting (group-owned / wrong trade). Publish anyway?`:'')
+    +`\n\nThey arrive as “pending” for you to approve there. Phone & website are withheld (sent as null) — families only reach firms through AfterLife.`))return;
+  if(overridden) log(`Publishing ${overridden} row(s) under “${catLabel}” rather than the trade they were swept as — the picker overrides it.`,'wn');
   running=true;$('publishBtn').disabled=true;setStats();
   // Write up the picks that don't already have marketplace copy (i.e. anything you
   // chose that wasn't graded APPROVE). Claude writes each from its site facts.
@@ -3970,7 +3986,12 @@ async function publishAfterLife(){
     }
     takenIds.set(id,key);
 
-    const gCatId=primary.pubCatId||catId;
+    // The PICKER WINS when you have set one. It used to be the other way round:
+    // a row loaded from the store carries the category it was swept under, so
+    // choosing Domiciliary and pressing publish sent them up as care home and said
+    // nothing. The row's own category is now only the fallback for when no
+    // category is picked — which is the manual-supply case it was written for.
+    const gCatId=catId||primary.pubCatId;
     const gCatLabel=primary.pubCatLabel||(AL_CATEGORIES.find(c=>c.id===gCatId)||{}).label||catLabel;
     return {id,
       name:primary.name,category:gCatId,categoryLabel:gCatLabel,
