@@ -93,9 +93,41 @@ def ch(r):
     return re.sub(r"\s", "", str(r.get("company_number") or "")).upper()
 
 
+def is_root(u):
+    """A site root, not a page inside it. www.circletrust.co.uk/ is the firm; /meet-the-team/ian is a person."""
+    path = re.sub(r"^https?://[^/]+", "", str(u or "").strip())
+    return path in ("", "/")
+
+
+def names_the_domain(r):
+    """Does this row's NAME look like the owner of its own website?
+
+    The rows being merged are one firm, but they are not equally well named: a firm's site carries a page
+    per adviser, so "Circle Trust" and "Eddie Geerah - Mortgage & Protection Advice" both come back on
+    circletrust.co.uk. The firm is the one whose name matches the domain, and that is the name the record
+    should keep — a supplier listed as one of its employees is no use to anybody.
+    """
+    d = site(r.get("website"))
+    if not d:
+        return False
+    root = re.sub(r"^(the|my)", "", d.split(".")[0])
+    root = re.sub(r"(financial|wealth|funerals?|group|holdings?|co|ltd)$", "", root)
+    nk = name_key(r.get("name"))
+    if len(root) < 4 or len(nk) < 4:
+        return False
+    return root[:5] in nk or nk[:5] in root
+
+
 def completeness(r):
-    """Prefer the row that costs most to recreate: a write-up above contact details above nothing."""
-    return (2 * bool((r.get("description") or "").strip())
+    """Which row of a duplicate group should survive.
+
+    Naming beats field count. A row that names the firm and points at its front page is the right record
+    even when a colleague's profile page happens to carry one more phone number; the missing fields get
+    copied onto it anyway, so nothing is lost by preferring it.
+    """
+    return (4 * names_the_domain(r)
+            + 3 * is_root(r.get("website"))
+            + 2 * bool((r.get("description") or "").strip())
             + 2 * bool(emails(r)) + bool((r.get("phone") or "").strip())
             + bool(site(r.get("website"))) + bool((r.get("postcode") or "").strip())
             + bool((r.get("address") or "").strip()) + bool(ch(r)))
@@ -121,8 +153,24 @@ def pull():
     return rows
 
 
+def conflicts(a, b):
+    """Two rows that CANNOT be the same firm — the app's rule, copied exactly.
+
+    A shared email address is NOT enough on its own. Two florists in Croydon with different websites turned
+    up on one address and the first version of this script merged them; the app has always refused that,
+    because a shared address between different-domain rows is contamination, not identity. Different
+    websites means different firms. The same website means one operation even if the registered company
+    numbers differ, since a group can run several companies on one site.
+    """
+    da, db = site(a.get("website")), site(b.get("website"))
+    if da and db:
+        return da != db
+    ca, cb = ch(a), ch(b)
+    return bool(ca and cb and ca != cb)
+
+
 def group(rows):
-    """Union rows in one trade+area that share a strong identity, then rows sharing a core name."""
+    """Cluster rows in one trade+area that are the same firm. Same algorithm the app runs on the grid."""
     out = []
     buckets = {}
     for r in rows:
@@ -131,49 +179,44 @@ def group(rows):
     for members in buckets.values():
         if len(members) < 2:
             continue
-        parent = {}
 
-        def find(x):
-            while parent.get(x, x) != x:
-                parent[x] = parent.get(parent[x], parent[x])
-                x = parent[x]
-            return x
-
-        def union(a, b):
-            ra, rb = find(a), find(b)
-            if ra != rb:
-                parent[ra] = rb
-
+        # pass 1 — strong identity: website domain, Companies House number, exact email address
+        by_key, clusters = {}, {}
         for r in members:
-            parent[r["id"]] = r["id"]
-        by = {}
-        for r in members:                                    # strong ids: website, company number, email
-            for k in (["d:" + site(r.get("website"))] if site(r.get("website")) else []) + \
-                     (["c:" + ch(r)] if ch(r) else []) + ["e:" + e for e in emails(r)]:
-                if k in by:
-                    union(by[k], r["id"])
-                else:
-                    by[k] = r["id"]
+            keys = ["d:" + site(r.get("website"))] if site(r.get("website")) else []
+            if ch(r):
+                keys.append("c:" + ch(r))
+            keys += ["e:" + e for e in emails(r)]
+            canon = None
+            for k in keys:
+                c = by_key.get(k)
+                if c is not None and c is not r and not conflicts(c, r):
+                    canon = c
+                    break
+            if canon is None:
+                clusters[id(r)] = [r]
+                canon = r
+            else:
+                clusters[id(canon)].append(r)
+            for k in keys:
+                by_key.setdefault(k, canon)
 
-        byid = {r["id"]: r for r in members}
-        byname = {}
-        for r in members:                                    # then core name, unless something contradicts it
-            k = name_key(r.get("name"))
+        # pass 2 — same core name in the same area, where nothing contradicts it
+        by_name = {}
+        for cid in list(clusters):
+            if cid not in clusters:
+                continue
+            head = clusters[cid][0]
+            k = name_key(head.get("name"))
             if len(k) < 6:
                 continue
-            if k in byname:
-                a, b = byid[byname[k]], r
-                da, db = site(a.get("website")), site(b.get("website"))
-                ca, cb = ch(a), ch(b)
-                if (da and db and da != db) or (ca and cb and ca != cb):
-                    continue                                  # different websites / companies — leave apart
-                union(byname[k], r["id"])
-            else:
-                byname[k] = r["id"]
+            other = by_name.get(k)
+            if other is not None and other in clusters and other != cid:
+                if not any(conflicts(a, b) for a in clusters[other] for b in clusters[cid]):
+                    clusters[other].extend(clusters.pop(cid))
+                    continue
+            by_name.setdefault(k, cid)
 
-        clusters = {}
-        for r in members:
-            clusters.setdefault(find(r["id"]), []).append(r)
         out.extend(g for g in clusters.values() if len(g) > 1)
     return out
 
@@ -223,8 +266,12 @@ def main():
     if b.returncode != 0:
         sys.exit("backup failed — nothing deleted. Fix the backup, then re-run.")
 
+    # Move the details onto the survivors BEFORE deleting anything, and stop if that fails — deleting a row
+    # whose email never reached the row replacing it is how contact details get lost for good.
     for i in range(0, len(patches), 200):
         d = post({"action": "merge", "rows": patches[i:i + 200]})
+        if not d.get("ok"):
+            sys.exit("merge failed, so NOTHING has been deleted: " + json.dumps(d)[:300])
         print(f"  merged details into {d.get('merged', 0)} surviving row(s)")
     gone = 0
     for i in range(0, len(deletes), 40):   # kb deletes row by row inside a 26s function — 40 is a safe slice
