@@ -255,6 +255,7 @@ button.primary .muted, button.primary .muted *, .primary .muted {
       <button class="primary" id="findFreeBtn" onclick="findWebsitesFree()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">🔎 Find websites FREE <span class="muted">(£0 — runs from your browser, guesses each site &amp; checks it's live. Do this first.)</span></button>
       <button class="primary" id="findWebBtn" onclick="findWebsitesClaude()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#7a5cff,#5b3fd6)">🔎 Top up the rest with Claude <span class="muted">(~2p/firm — only the ones the free finder missed)</span></button>
       <button class="primary" id="enrichBtn" onclick="enrichAll()" disabled style="width:100%;margin-top:8px;background:linear-gradient(135deg,#2f9e6f,#1f7d55)">✦ Enrich kept leads (email · contact · ownership)</button>
+      <button class="ghost small" onclick="removeDuplicates()" style="width:100%;margin-top:8px">⧉ Remove duplicates <span class="muted">(same firm listed twice in one area — merges them, keeping the fullest row)</span></button>
       <button class="ghost small" onclick="collapseNationalFirms()" style="width:100%;margin-top:8px">⧉ Collapse national firms <span class="muted">(one firm listed in many areas → a single row covering them all)</span></button>
       <!-- Amber, not the green used for free steps: this one spends your Hunter balance. -->
       <button class="primary" id="hunterFillBtn" onclick="hunterFillEmails()" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#d98324,#b3651a)">✉ Find missing emails with Hunter <span class="muted">(uses your Hunter credits · only rows with a website and no email · one lookup per domain, so branches cost one between them)</span></button>
@@ -827,6 +828,17 @@ function setStats(){$('sKept').textContent=LEADS.length;$('sExcl').textContent=E
 // generic mailbox hosts — an email at one of these is NOT a firm identity (many firms share gmail)
 const GENERIC_MAIL=new Set(['gmail.com','googlemail.com','outlook.com','hotmail.com','hotmail.co.uk','yahoo.com','yahoo.co.uk','ymail.com','icloud.com','me.com','aol.com','live.com','live.co.uk','msn.com','btinternet.com','btconnect.com','sky.com','talktalk.net','virginmedia.com','mail.com','protonmail.com','gmx.com','tiscali.co.uk']);
 function domainOf(url){if(!url)return '';const m=String(url).trim().toLowerCase().replace(/^https?:\/\//,'').replace(/^www\./,'').match(/^([a-z0-9.-]+)/);return m?m[1]:'';}
+// Hosts that are NOT a firm's identity. A website of "facebook.com" says nothing about WHICH firm this is,
+// and 229 rows in the store carry exactly that. Treating it as a domain made every one of them the same
+// company: they pooled each other's emails, they were detected as a consolidator group and merged, and at
+// publish they collapsed into ONE record. Social pages, directories, marketplaces and shared site-builder
+// hosts all behave this way, so identity code asks siteDomOf() and gets nothing back for them — such a row
+// falls back to its name, which is the only thing that actually distinguishes it.
+// domainOf() is unchanged and still used for crawling and display, where the URL is genuinely useful.
+const GENERIC_SITE=/(^|\.)(facebook\.com|fb\.com|fb\.me|instagram\.com|twitter\.com|x\.com|t\.co|linkedin\.com|youtube\.com|youtu\.be|tiktok\.com|pinterest\.[a-z.]+|nextdoor\.[a-z.]+|linktr\.ee|bit\.ly|wa\.me|whatsapp\.com|sites\.google\.com|business\.site|google\.[a-z.]+|goo\.gl|bing\.com|yahoo\.[a-z.]+|apple\.com|wixsite\.com|wordpress\.com|blogspot\.[a-z.]+|weebly\.com|squarespace\.com|myshopify\.com|yell\.com|yelp\.[a-z.]+|thomsonlocal\.com|freeindex\.co\.uk|cylex-uk\.co\.uk|scoot\.co\.uk|192\.com|checkatrade\.com|trustpilot\.com|tripadvisor\.[a-z.]+|gumtree\.com|etsy\.com|ebay\.[a-z.]+|amazon\.[a-z.]+|wikipedia\.org|businformaps\.org|companieshouse\.gov\.uk|service\.gov\.uk|gov\.uk|unbiased\.co\.uk|vouchedfor\.co\.uk)$/i;
+const isGenericSite=d=>!!d&&GENERIC_SITE.test(d);
+// the website domain ONLY when it identifies this firm and no other
+function siteDomOf(o){const d=domainOf(typeof o==='string'?o:(o&&o.website));return isGenericSite(d)?'':d;}
 // Identity of a firm WITHIN a postcode area: it is the SAME company if it shares a Companies House
 // number, a website domain, or an email domain — the STRONG signals the operator named. Name is NOT
 // a cross-branch key (different firms share names) — it only ever collapses the exact same branch
@@ -852,7 +864,7 @@ function emailsOf(o){
 function identityKeys(o,area){
   const a=area||''; const ks=[];
   const ch=chOf(o); if(ch)ks.push('c:'+ch+'|'+a);
-  const dom=domainOf(o.website); if(dom)ks.push('d:'+dom+'|'+a);
+  const dom=siteDomOf(o); if(dom)ks.push('d:'+dom+'|'+a);
   emailsOf(o).forEach(em=>ks.push('e:'+em+'|'+a));   // one key PER address — sharing ANY address merges
   return ks;
 }
@@ -862,7 +874,7 @@ function identityKeys(o,area){
 // number is NOT a conflict on its own: a group (e.g. Hunnaball) runs several registered companies under
 // one website — same domain should still collapse to one sellable slot.
 function strongConflict(a,b){
-  const da=domainOf(a.website),db=domainOf(b.website);
+  const da=siteDomOf(a),db=siteDomOf(b);
   if(da&&db){ if(da!==db)return true; return false; }   // different websites = different firms; SAME website = same operation (merge, even if CH differs — a group runs several companies on one site)
   const ca=chOf(a),cb=chOf(b); if(ca&&cb&&ca!==cb)return true;  // no shared website + different Companies House numbers = different firms
   return false;
@@ -1215,7 +1227,7 @@ async function refreshContactsFromDb(){
         const d=await r.json();
         const got=(d&&d.results)||[];
         for(const x of got){
-          const dd=dom(x.website); if(dd&&!byDom.has(dd)) byDom.set(dd,x);
+          const dd=dom(x.website); if(dd&&!isGenericSite(dd)&&!byDom.has(dd)) byDom.set(dd,x);
           const nk=nkey(x.name,x.area); if(!byName.has(nk)) byName.set(nk,x);
         }
         if(got.length<1000) break;
@@ -1226,12 +1238,13 @@ async function refreshContactsFromDb(){
 
   let em=0, ph=0, miss=0;
   for(const l of LEADS){
-    const hit = byDom.get(dom(l.website)) || byName.get(nkey(l.name,l.batchArea||l.area));
+    const ld=dom(l.website);
+    const hit = (ld&&!isGenericSite(ld)?byDom.get(ld):null) || byName.get(nkey(l.name,l.batchArea||l.area));
     if(!hit){ miss++; continue; }
     if(!(l.emails||'').trim() && (hit.email||'').trim()){ l.emails=hit.email.trim(); em++; }
     if(!(l.phone||'').trim()  && (hit.phone||'').trim()){ l.phone =hit.phone.trim();  ph++; }
   }
-  render(); updateButtons&&updateButtons();
+  render();
   log(`Filled ${em} email(s) and ${ph} phone(s). ${miss} row(s) had no match in the database.`, em||ph?'ok':'wn');
   if(btn) btn.disabled=false;
 }
@@ -1248,7 +1261,7 @@ async function refreshContactsFromDb(){
 
 function collapseNationalFirms(){
   if(!LEADS.length){ log('Nothing in the grid to collapse.','wn'); return; }
-  const key = l => domainOf(l.website) || ('n:'+nameKey(l.name));
+  const key = l => siteDomOf(l) || ('n:'+nameKey(l.name));
   const groups = new Map();
   LEADS.forEach(l=>{ const k=key(l); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(l); });
 
@@ -1267,9 +1280,52 @@ function collapseNationalFirms(){
   });
   if(!collapsed){ log(`No national firms found — every firm appears in fewer than ${NATIONAL_AT} areas.`,'wn'); return; }
   LEADS = kept;
-  render(); updateSelCount && updateSelCount(); updateButtons && updateButtons();
+  render(); updateSelCount();
   log(`⧉ Collapsed ${firms} national firm(s): ${collapsed} duplicate row(s) merged away. `
     + `The grid is now ${LEADS.length} row(s). Each collapsed firm publishes ONCE covering all its areas.`,'ok');
+}
+
+/* ---------- ⧉ Remove duplicates ----------
+   Two DIFFERENT things get called "a duplicate" here, and only one of them is junk:
+
+     1. The SAME firm listed twice in the SAME postcode area. Junk. The store's unique key is name+area,
+        so "Dillys" and "Dillys Bespoke Florist" in CO are two rows by definition and nothing has ever
+        removed them. This merges them, keeping the most complete row and taking anything it is missing
+        (email, phone, website, and the vetting) from the one it absorbs.
+
+     2. The same firm listed in SEVERAL areas. NOT junk — that is the firm's footprint, and it is how a
+        national supplier gets found in every area it covers. Publishing already collapses these into one
+        record carrying areas[]. This function counts them and leaves them alone; ⧉ Collapse national
+        firms is there for when you want them as single rows in the grid too.
+
+   Nothing here touches the database. It cleans the grid in front of you; save the grid afterwards if you
+   want it kept, and run dedupe_store.py to clear the same duplicates out of the stored data. */
+function removeDuplicates(){
+  if(!LEADS.length){ log('Nothing in the grid to de-duplicate.','wn'); return; }
+  const before=LEADS.length;
+  const names=new Map(); LEADS.forEach(l=>names.set(l,l.name));
+
+  // A chain address sitting on an independent's row would act as a merge key and fuse two real firms,
+  // so clear those first — same order enrichment uses.
+  try{ if(typeof scrubChainEmails==='function') scrubChainEmails(); }catch(e){}
+  const byId=dedupeLeadsByIdentity();     // shared website domain / Companies House number / email address
+  const byName=mergeByNameArea();         // same core name in the same area, no conflicting company number
+
+  const gone=before-LEADS.length;
+  if(gone) log(`⧉ Removed ${gone} duplicate row(s) — ${byId} matched on website, company number or email, `
+    + `${byName} on the firm's name within one area. The grid is now ${LEADS.length} row(s), `
+    + `and every survivor kept the fullest contact details and the vetting of the rows it absorbed.`,'ok');
+  else log('⧉ No same-area duplicates found — every firm is listed once per postcode area.','ok');
+
+  // Report the multi-area firms rather than silently merging them: they are the footprint, not junk.
+  const fps=firmFootprints(LEADS); let multi=0, extraRows=0, national=0;
+  fps.forEach(f=>{ if(f.rows.length>1){ multi++; extraRows+=f.rows.length-1; }
+                   if(f.areas.size>=NATIONAL_AT) national++; });
+  if(multi) log(`${multi} firm(s) appear in more than one area (${extraRows} extra row(s), ${national} of them in ${NATIONAL_AT}+ areas). `
+    + `These are NOT duplicates — publishing sends each as ONE record covering all its areas. `
+    + `Use ⧉ Collapse national firms if you also want them as single rows here.`,'wn');
+
+  render(); updateSelCount(); setStats();
 }
 
 
@@ -1517,6 +1573,19 @@ function mergeLead(a,b){
   if(!a.companyId&&b.companyId)a.companyId=b.companyId;
   if(!a.registerVerified&&b.registerVerified)a.registerVerified=b.registerVerified;
   if(b.tradingBrands&&b.tradingBrands.length)a.tradingBrands=[...new Set([...(a.tradingBrands||[]),...b.tradingBrands])];
+  // KEEP THE VETTING. Every merge used to drop whatever the losing row carried, so de-duplicating after a
+  // Vet & Rank threw away write-ups and verdicts that had already been paid for and left the survivor
+  // looking un-vetted. Fill anything the survivor is missing from the row being merged into it.
+  if(!a.alDescription&&b.alDescription)a.alDescription=b.alDescription;
+  if(!a.alVerdict&&b.alVerdict){a.alVerdict=b.alVerdict;
+    if(a.alPriority==null)a.alPriority=b.alPriority; if(a.alFit==null)a.alFit=b.alFit; if(a.alQuality==null)a.alQuality=b.alQuality;}
+  if(!a.alNotes&&b.alNotes)a.alNotes=b.alNotes;
+  if(!a.alTier&&b.alTier)a.alTier=b.alTier;
+  if(!a.independence&&b.independence)a.independence=b.independence;
+  if(!a.enriched&&b.enriched)a.enriched=b.enriched;
+  // a row collapsed earlier carries its whole area footprint — a later merge must not shrink it
+  {const ar=[...new Set([...(a.areasList||[]),...(b.areasList||[]),(a.area||'').toUpperCase(),(b.area||'').toUpperCase()].filter(Boolean))].sort();
+   if(ar.length>1)a.areasList=ar;}
 }
 /* ---------- STAGE 1 — remove CHAIN rows BEFORE any merge/propagation, so a chain branch can never be
    fused into an independent and drag its email in. Also scrubs a STRAY chain email off an independent's
@@ -1549,7 +1618,7 @@ const HOST_PROVIDER_FE=/^(34sp|wix|squarespace|godaddy|hostinger|123-?reg|fastho
 function detectGroupDomains(){
   const map=new Map();  // domain -> {names:[nameKey], areas:Set}
   LEADS.forEach(l=>{
-    const doms=new Set([domainOf(l.website),...emailsOf(l).map(e=>emDom(e))].filter(Boolean));
+    const doms=new Set([siteDomOf(l),...emailsOf(l).map(e=>emDom(e))].filter(Boolean));
     const area=(l.area||'').toUpperCase(), nk=nameKey(l.name);
     doms.forEach(d=>{ if(!d||GENERIC_MAIL.has(d)||HOST_PROVIDER_FE.test(d)||isChainDomain(d))return;
       if(!map.has(d))map.set(d,{names:[],areas:new Set()}); map.get(d).names.push(nk); map.get(d).areas.add(area); });
@@ -1574,7 +1643,7 @@ function detectGroupDomains(){
 // blocklist causes exclusion (handled by chain-domain/chain-email in applyChainVerdicts).
 function mergeGroupBrands(groupSet){
   if(!groupSet||!groupSet.size)return 0;
-  const gd=l=>{const wd=domainOf(l.website);if(wd&&groupSet.has(wd))return wd;return emailsOf(l).map(e=>emDom(e)).find(d=>groupSet.has(d))||'';};
+  const gd=l=>{const wd=siteDomOf(l);if(wd&&groupSet.has(wd))return wd;return emailsOf(l).map(e=>emDom(e)).find(d=>groupSet.has(d))||'';};
   const byKey=new Map(); const removed=new Set(); let merged=0;
   for(const l of LEADS){
     if(removed.has(l))continue;
@@ -1720,7 +1789,7 @@ function propagateFirmData(){
   // put a chain address on an independent (T Cribb ← funeralpartners) and then fused 14 chain branches in.
   const byDom=new Map(), byCH=new Map();
   const push=(mp,k,l)=>{if(!k)return;if(!mp.has(k))mp.set(k,[]);mp.get(k).push(l);};
-  LEADS.forEach(l=>{push(byDom,domainOf(l.website),l);push(byCH,chOf(l),l);});
+  LEADS.forEach(l=>{push(byDom,siteDomOf(l),l);push(byCH,chOf(l),l);});
   pool(byDom,true);    // shared website domain = same company → pool emails + fill company number
   pool(byCH,false);    // shared Companies House number = same company → pool emails
   // copy a WEBSITE onto website-less rows from a same-name+area sibling that has one (to enable crawl)
@@ -1732,9 +1801,9 @@ function propagateFirmData(){
   // Always rewrites l.emails to the normalised set, so any placeholder/bad-TLD junk is stripped from the
   // stored string too (emailsOf() already filters it on read; this makes the stored value match).
   const domToNames=new Map(); const chSet=chainDomainSet();
-  LEADS.forEach(l=>{const d=domainOf(l.website); if(d){if(!domToNames.has(d))domToNames.set(d,new Set());domToNames.get(d).add(nameKey(l.name));}});
+  LEADS.forEach(l=>{const d=siteDomOf(l); if(d){if(!domToNames.has(d))domToNames.set(d,new Set());domToNames.get(d).add(nameKey(l.name));}});
   LEADS.forEach(l=>{
-    const own=domainOf(l.website), nk=nameKey(l.name), all=emailsOf(l);
+    const own=siteDomOf(l), nk=nameKey(l.name), all=emailsOf(l);
     const clean=all.filter(e=>{
       const ed=(e.split('@')[1]||'').toLowerCase();
       if(isChainDomain(ed,chSet))return false;        // STAGE 3 — a chain-domain address never rides on any row
@@ -1931,9 +2000,9 @@ function foldInRegister(catKey,catLabel){
     const area=(r.POSTCODE_AREA||'').toUpperCase();
     if(!areas.has(area)||!catMatch(r.CATEGORY))return;
     if(isRegChain(r)){excludedChain++;return;}
-    const rnk=nameKey(r.COMPANY), rdom=domainOf(r.WEBSITE);
+    const rnk=nameKey(r.COMPANY), rdom=siteDomOf(r.WEBSITE);
     const m=LEADS.find(l=>(l.area||'').toUpperCase()===area && (
-      (rdom&&domainOf(l.website)===rdom) || nameKey(l.name)===rnk ||
+      (rdom&&siteDomOf(l)===rdom) || nameKey(l.name)===rnk ||
       (nameKey(l.name).length>=6&&rnk.startsWith(nameKey(l.name))) || (rnk.length>=6&&nameKey(l.name).startsWith(rnk))
     ));
     if(m){
@@ -2251,9 +2320,9 @@ function foldInManual(){
   let added=0, matched=0;
   MANUAL_SUPPLY.forEach(r=>{
     const area=(r.AREA||'').toUpperCase();
-    const rnk=nameKey(r.COMPANY), rdom=domainOf(r.WEBSITE);
+    const rnk=nameKey(r.COMPANY), rdom=siteDomOf(r.WEBSITE);
     const m=LEADS.find(l=>(l.area||'').toUpperCase()===area && (
-      (rdom&&domainOf(l.website)===rdom) || nameKey(l.name)===rnk ||
+      (rdom&&siteDomOf(l)===rdom) || nameKey(l.name)===rnk ||
       (nameKey(l.name).length>=6&&rnk.startsWith(nameKey(l.name))) || (rnk.length>=6&&nameKey(l.name).startsWith(rnk))
     ));
     if(m){
@@ -2338,7 +2407,7 @@ async function finalizePool(pool,ctx,opts){
   // one row per COMPANY per AREA now; a row that swallowed >1 same-area branch is flagged (informative)
   let mergedRows=0;
   LEADS.forEach(l=>{if((l.branchCount||0)>1){l.branchDup=true;mergedRows++;}});
-  const firmId=l=>domainOf(l.website)||nameKey(l.name);
+  const firmId=l=>siteDomOf(l)||nameKey(l.name);
   const multiAreaFirms=(()=>{const m={};LEADS.forEach(l=>{const k=firmId(l);(m[k]=m[k]||new Set()).add(l.area);});return Object.values(m).filter(s=>s.size>1).length;})();
   $('bar').style.width='100%';
   if(mergedRows)log(`${mergedRows} company(ies) had several branches in one area — merged to a single row each (one slot, one email per area, flagged ⑃).`,'wn');
@@ -2627,11 +2696,11 @@ async function getContactDetails(){
     let i=0; const cw=async()=>{ while(i<toCrawl.length){ const l=toCrawl[i++]; try{await enrichLead(l);}catch(e){l.enriched=true;} await new Promise(r=>setTimeout(r,180)); } };
     await Promise.all([cw(),cw(),cw()]);
     if(!($('meteredEnrich')&&!$('meteredEnrich').checked)){
-      const need2=[...new Set(toCrawl.filter(l=>!emailsOf(l).length&&l.website).map(l=>domainOf(l.website)).filter(Boolean))];
+      const need2=[...new Set(toCrawl.filter(l=>!emailsOf(l).length&&l.website).map(l=>siteDomOf(l)).filter(Boolean))];
       window.__firecrawlCache=window.__firecrawlCache||{}; const fc=window.__firecrawlCache; let fcCalls=0,fcFound=0;
       for(const dom of need2){
         if(fc[dom]===undefined){fcCalls++; try{const r=await fetch('/.netlify/functions/firecrawl',{method:'POST',body:JSON.stringify({domain:dom,firecrawlKey:localStorage.getItem('pp_Firecrawl')||undefined})});const d=await r.json();fc[dom]=Array.isArray(d.emails)?d.emails:[];if(d.skipped&&/no Firecrawl key/.test(d.reason||''))fc.__noKey=true;}catch(e){fc[dom]=[];} await new Promise(r=>setTimeout(r,250));}
-        const em=fc[dom]||[]; if(em.length){fcFound++;toCrawl.filter(l=>domainOf(l.website)===dom&&!emailsOf(l).length).forEach(l=>l.emails=[...new Set([...emailsOf(l),...em])].join('; '));}
+        const em=fc[dom]||[]; if(em.length){fcFound++;toCrawl.filter(l=>siteDomOf(l)===dom&&!emailsOf(l).length).forEach(l=>l.emails=[...new Set([...emailsOf(l),...em])].join('; '));}
       }
       if(need2.length&&!fc.__noKey)log(`Firecrawl (ticked only): ${fcCalls} deep-crawl(s), found an email for ${fcFound} domain(s).`,fcFound?'ok':'wn');
     }
@@ -2699,8 +2768,8 @@ async function enrichAll(){
   // (cached), and BEFORE Hunter (Firecrawl returns the firm's OWN address; Hunter is the last resort).
   if($('meteredEnrich')&&!$('meteredEnrich').checked){log('Metered enrichment OFF — skipping Firecrawl + Hunter (free/cheap validation run).','wn');}
   else{
-    const domHasEmail=new Set(); LEADS.forEach(l=>{if(emailsOf(l).length){const d=domainOf(l.website);if(d)domHasEmail.add(d);}});
-    const need=[...new Set(LEADS.map(l=>domainOf(l.website)).filter(d=>d&&!domHasEmail.has(d)))];
+    const domHasEmail=new Set(); LEADS.forEach(l=>{if(emailsOf(l).length){const d=siteDomOf(l);if(d)domHasEmail.add(d);}});
+    const need=[...new Set(LEADS.map(l=>siteDomOf(l)).filter(d=>d&&!domHasEmail.has(d)))];
     window.__firecrawlCache=window.__firecrawlCache||{};
     const cache=window.__firecrawlCache;
     let calls=0, found=0, i=0;
@@ -2715,7 +2784,7 @@ async function enrichAll(){
           await new Promise(r=>setTimeout(r,250));
         }
         const em=(cache[dom]||[]);
-        if(em.length){found++;LEADS.filter(l=>domainOf(l.website)===dom&&!emailsOf(l).length).forEach(l=>{l.emails=[...new Set([...emailsOf(l),...em])].join('; ');});}
+        if(em.length){found++;LEADS.filter(l=>siteDomOf(l)===dom&&!emailsOf(l).length).forEach(l=>{l.emails=[...new Set([...emailsOf(l),...em])].join('; ');});}
       }
     };
     await Promise.all([fw(),fw()]);
@@ -2728,8 +2797,8 @@ async function enrichAll(){
   // already have an email (on any row) are skipped, so branches of one firm cost a single lookup.
   if($('meteredEnrich')&&!$('meteredEnrich').checked){/* metered off — Hunter skipped (logged above) */}
   else{
-    const domHasEmail=new Set(); LEADS.forEach(l=>{if(emailsOf(l).length){const d=domainOf(l.website);if(d)domHasEmail.add(d);}});
-    const need=[...new Set(LEADS.map(l=>domainOf(l.website)).filter(d=>d&&!domHasEmail.has(d)))];
+    const domHasEmail=new Set(); LEADS.forEach(l=>{if(emailsOf(l).length){const d=siteDomOf(l);if(d)domHasEmail.add(d);}});
+    const need=[...new Set(LEADS.map(l=>siteDomOf(l)).filter(d=>d&&!domHasEmail.has(d)))];
     window.__hunterCache=window.__hunterCache||{};
     const cache=window.__hunterCache;
     let calls=0, found=0, i=0;
@@ -2744,7 +2813,7 @@ async function enrichAll(){
           await new Promise(r=>setTimeout(r,220));
         }
         const em=(cache[dom]||[]);
-        if(em.length){found++;LEADS.filter(l=>domainOf(l.website)===dom&&!emailsOf(l).length).forEach(l=>{l.emails=[...new Set([...emailsOf(l),...em])].join('; ');});}
+        if(em.length){found++;LEADS.filter(l=>siteDomOf(l)===dom&&!emailsOf(l).length).forEach(l=>{l.emails=[...new Set([...emailsOf(l),...em])].join('; ');});}
       }
     };
     await Promise.all([hw(),hw()]);
@@ -3522,7 +3591,7 @@ function relaxAllExclusions(){
   return n;
 }
 function firmIdentity(l){
-  const dom=domainOf(l.website);                     if(dom)  return 'd:'+dom;
+  const dom=siteDomOf(l);                            if(dom)  return 'd:'+dom;
   const ch=(l.companyNo||'').toString().replace(/\s/g,'').toUpperCase(); if(ch) return 'c:'+ch;
   const edom=emailDomOf({emails:l.emails});          if(edom) return 'm:'+edom;
   return 'n:'+nameKey(l.name);
