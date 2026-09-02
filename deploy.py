@@ -35,23 +35,36 @@ TOK = token()
 
 
 def req(method, path, data=None, ctype="application/json", raw=False):
+    """One Netlify API call, waiting out rate limits rather than dying on them.
+
+    Netlify rate-limits per application, so several deploys in a row — which is what fixing anything looks
+    like — start returning 429. Treating that as a failure aborted deploys that were fine and made the
+    next attempt worse, so a 429 now waits and retries instead. Everything else still fails loudly.
+    """
     url = path if path.startswith("http") else API + path
     body = data if raw else (json.dumps(data).encode() if data is not None else None)
-    r = urllib.request.Request(url, data=body, method=method)
-    r.add_header("Authorization", "Bearer " + TOK)
-    if body is not None:
-        r.add_header("Content-Type", ctype)
-    try:
-        with urllib.request.urlopen(r, context=CTX, timeout=180) as resp:
-            txt = resp.read()
-            return resp.status, (json.loads(txt) if txt and not raw else txt)
-    except urllib.error.HTTPError as e:
-        # Netlify explains a rejection in the BODY. Letting the HTTPError propagate threw a stack trace that
-        # named urllib and not the file it choked on, which is useless for fixing it.
-        body = ""
-        try: body = e.read().decode("utf-8", "ignore")[:300]
-        except Exception: pass
-        raise RuntimeError(f"{method} {url.split('/')[-1]} -> HTTP {e.code}: {body}") from None
+    wait = 15
+    for attempt in range(6):
+        r = urllib.request.Request(url, data=body, method=method)
+        r.add_header("Authorization", "Bearer " + TOK)
+        if body is not None:
+            r.add_header("Content-Type", ctype)
+        try:
+            with urllib.request.urlopen(r, context=CTX, timeout=180) as resp:
+                txt = resp.read()
+                return resp.status, (json.loads(txt) if txt and not raw else txt)
+        except urllib.error.HTTPError as e:
+            # Netlify explains a rejection in the BODY. Letting the HTTPError propagate threw a stack trace
+            # that named urllib and not the file it choked on, which is useless for fixing it.
+            detail = ""
+            try: detail = e.read().decode("utf-8", "ignore")[:300]
+            except Exception: pass
+            if e.code == 429 and attempt < 5:
+                print(f"  rate-limited by Netlify; waiting {wait}s and trying again")
+                time.sleep(wait)
+                wait = min(wait * 2, 120)
+                continue
+            raise RuntimeError(f"{method} {url.split('/')[-1]} -> HTTP {e.code}: {detail}") from None
 
 
 
@@ -163,9 +176,21 @@ def main():
                         raise
                     time.sleep(2 * attempt)
 
+    # Poll for the result. A 429 here is Netlify rate-limiting the STATUS CHECK, not a failed deploy —
+    # aborting on it reported a failure for a deploy that had already gone out, and re-running it made the
+    # rate-limiting worse. Back off and keep asking instead.
+    wait = 3
     for i in range(60):
-        time.sleep(3)
-        _, pd = req("GET", f"/deploys/{dep['id']}")
+        time.sleep(wait)
+        try:
+            _, pd = req("GET", f"/deploys/{dep['id']}")
+        except RuntimeError as e:
+            if "429" in str(e):
+                wait = min(wait * 2, 30)
+                print(f"  … rate-limited on the status check; the deploy is still running, waiting {wait}s")
+                continue
+            raise
+        wait = 3
         if pd["state"] in ("ready", "error"):
             print("FINAL:", pd["state"], "|", pd.get("ssl_url") or pd.get("url"))
             if pd.get("error_message"):

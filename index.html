@@ -284,6 +284,10 @@ button.primary .muted, button.primary .muted *, .primary .muted {
       <div class="muted" style="font-size:11px;margin-top:3px">Sends the ticked leads (with phone &amp; email) to the CRM approval queue — nothing reaches a rep's pipeline until it's reviewed there.</div>
       <button class="ghost small" style="width:100%;margin-top:6px" onclick="publishMasterCRM()">▲ Publish MASTER to the Sales CRM</button>
       <div class="muted" style="font-size:11px;margin-top:3px">Sends every master-set lead to the CRM approval queue, badged <b>Unvetted</b> — the reviewer does the vetting there. Safe to re-run; already-imported rows just refresh.</div>
+      <div style="border:1px dashed var(--line);border-radius:8px;padding:8px;margin-top:10px">
+        <div class="muted" style="font-size:11.5px;margin-bottom:5px"><b>Already published?</b> Fix a company that appears on the AfterLife site more than once. This works on the <b>live published list</b>, not on the grid, so it can tidy records sent weeks ago.</div>
+        <button class="ghost small" id="alDedupeBtn" onclick="dedupePublished()" style="width:100%">⧉ Check the published AfterLife list for duplicates</button>
+      </div>
     </div>
   </aside>
   <section class="work">
@@ -824,6 +828,169 @@ function setStats(){$('sKept').textContent=LEADS.length;$('sExcl').textContent=E
   const rc=$('rankedCsvBtn');if(rc)rc.disabled=!LEADS.length;
   updateSelCount();}
 
+/* ---------- never leave the app locked ----------
+   Every long job takes a lock on the way in: `running=true` and its own button disabled. Releasing it was
+   left to the last line of each function, so ANY error in between kept the lock on — the button stayed
+   grey, nothing said why, and reloading the page was the only way back. A parse of the whole file found
+   that 15 of the 18 functions taking that lock had no finally: publishing to AfterLife and to the CRM,
+   both website finders, Hunter, all three sweeps, contact details, the register and FCA checks. Only
+   Enrich and Vet & Rank were protected, and only because they had already failed on Dan and been fixed
+   by hand.
+
+   Fifteen separate try/finally blocks is fifteen chances to put one in the wrong function, which has
+   already happened once. This releases every lock in one place instead, on any uncaught error, and says
+   what broke — so a fault costs one visible message rather than a silently dead app. */
+function releaseLocks(why){
+  try{ running=false; }catch(e){}
+  try{ document.querySelectorAll('button').forEach(b=>{ b.disabled=false; }); }catch(e){}
+  try{ setStats(); }catch(e){}          // re-derives the ones that SHOULD still be disabled
+  try{ updateSelCount(); }catch(e){}
+  if(why) try{ log('The job stopped: '+why+'. The buttons work again — nothing was sent or saved by the step that failed. If it repeats, copy this line.','er'); }catch(e){}
+}
+window.addEventListener('error', e => releaseLocks((e && e.message) || 'an unexpected error'));
+window.addEventListener('unhandledrejection', e => {
+  const r = e && e.reason; releaseLocks((r && (r.message || String(r))) || 'a request failed');
+});
+
+/* ---------- ⧉ De-duplicate what is ALREADY PUBLISHED on AfterLife ----------
+   Everything else here cleans leads BEFORE they are published, which is no use for a company that is
+   already on the site twice: those records went out weeks ago, and only the published list can be
+   corrected now.
+
+   It reads the live directory through AfterLife's own admin API — proxied by our alsuppliers function so
+   the token never reaches this browser — finds companies holding more than one record, merges each set
+   into a single record carrying every postcode area that company covers, and removes the spares.
+
+   Two presses, never one. The first only LOOKS: it reports what it found and downloads a CSV naming every
+   record it would remove and which one would survive. The second applies it, behind a confirmation that
+   states the count. Deleting a live marketplace record should not be one mis-click away.
+
+   Matching is by website first, then Companies House number. Where a record has neither it falls back to
+   the name, but only when nothing contradicts it: two records with DIFFERENT websites are two different
+   companies whatever they are called, and are never merged. */
+let AL_PLAN = null;
+const _alPost = async (payload) => {
+  const r = await fetch('/.netlify/functions/alsuppliers', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+  return r.json();
+};
+const _alNameKey = n => String(n||'').toLowerCase().replace(/&/g,'and')
+  .replace(/\s+[-–—]\s+.*$/,'').replace(/\s*\([^)]*\)\s*$/,'')
+  .replace(/\b(ltd|limited|llp|plc|the|co|company|funeral directors?|funerals?|services?|service|group|and|sons?|son)\b/g,'')
+  .replace(/[^a-z0-9]+/g,'').slice(0,14);
+const _alAreas = r => (r.areas && r.areas.length) ? r.areas : (r.area ? [r.area] : []);
+
+async function dedupePublished(){
+  const btn=$('alDedupeBtn');
+  if(AL_PLAN) return _alApplyPlan();            // second press applies what the first press showed
+  if(btn) btn.disabled=true;
+  try{
+    log('Reading the published AfterLife directory, one postcode area at a time — asking for the whole thing at once times out on their side.');
+    const f=await _alPost({action:'facets'});
+    if(!f.ok){ log('Could not read AfterLife: '+(f.error||f.detail||'unknown'),'er'); return; }
+    const areas=Object.keys(f.areas||{}).sort();
+    const byId=new Map();
+    for(let i=0;i<areas.length;i++){
+      const d=await _alPost({action:'list',area:areas[i],pageSize:2000});
+      if(d.ok) (d.suppliers||[]).forEach(r=>byId.set(r.id,r));
+      if(i%25===0) log(`  ${i+1}/${areas.length} areas · ${byId.size} records so far`);
+    }
+    const recs=[...byId.values()];
+    log(`${recs.length} record(s) are published on afterlife.ltd.`,'ok');
+
+    const keyOf=r=>{ const d=siteDomOf(r.website); if(d) return 'd:'+d;
+      const c=String(r.companyNumber||'').replace(/\s/g,'').toUpperCase(); if(c) return 'c:'+c;
+      const n=_alNameKey(r.name); return n.length>=6 ? 'n:'+n : ''; };
+    const groups=new Map();
+    recs.forEach(r=>{ const k=keyOf(r); if(!k) return; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(r); });
+
+    const plan=[];
+    // Same name, DIFFERENT websites. Never merged automatically, because most of these are genuinely
+    // different businesses — "The Flower Shop" in Consett, Seaham and Ossett are three separate shops, and
+    // merging them would delete two real suppliers. A few are one operator running a site per town
+    // (Direct Cremations has twelve). Only a person can tell those apart, so they are reported for review.
+    const review=[];
+    const byName=new Map();
+    recs.forEach(r=>{ const n=_alNameKey(r.name); if(n.length<6) return;
+      if(!byName.has(n)) byName.set(n,[]); byName.get(n).push(r); });
+    byName.forEach(g=>{ if(g.length<2) return;
+      if([...new Set(g.map(r=>siteDomOf(r.website)).filter(Boolean))].length>1) review.push(g); });
+
+    groups.forEach((g,k)=>{
+      if(g.length<2) return;
+      if(k.startsWith('n:') && [...new Set(g.map(r=>siteDomOf(r.website)).filter(Boolean))].length>1) return;
+      const all=[...new Set([].concat(...g.map(_alAreas)))].sort();
+      // keep the record covering the most areas — families already reach it from the most places
+      const keep=g.slice().sort((a,b)=>(_alAreas(b).length-_alAreas(a).length)
+        || ((siteDomOf(b.website)?1:0)-(siteDomOf(a.website)?1:0)))[0];
+      plan.push({ keep, remove:g.filter(r=>r!==keep), areas:all });
+    });
+
+    const _alCsv=(rows,file)=>{ const csv=rows.map(r=>r.map(c=>'"'+String(c==null?'':c).replace(/"/g,'""')+'"').join(',')).join('\n');
+      const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download=file; a.click(); };
+    if(review.length){
+      const rows=[['same_name_group','record','id','postcode_area','website','status']];
+      review.forEach(g=>g.forEach(r=>rows.push([_alNameKey(r.name),r.name,r.id,r.area,r.website||'',r.status||''])));
+      _alCsv(rows,'AfterLife_possible_duplicates_REVIEW.csv');
+      log(`${review.length} group(s) share a NAME but have different websites — usually different businesses `
+        + `(three separate "The Flower Shop"s), occasionally one operator with a site per town. `
+        + `NOT touched: they are listed in AfterLife_possible_duplicates_REVIEW.csv for you to judge.`,'wn');
+      review.slice(0,6).forEach(g=>log(`   ${g.map(r=>r.name+' ['+r.area+']').join('  ·  ')}`));
+    }
+
+    if(!plan.length){ log('✓ No company is published twice under one identity — nothing to merge automatically.','ok'); AL_PLAN=null; return; }
+    const removing=plan.reduce((n,p)=>n+p.remove.length,0);
+    log(`${plan.length} compan(ies) hold more than one published record. ${removing} record(s) would be removed, `
+      + `and the survivor for each would carry every area that company covers.`,'wn');
+    plan.slice(0,10).forEach(p=>log(`   keep "${p.keep.name}" (${p.areas.length} area(s)) · remove ${p.remove.map(r=>'"'+r.name+'"').join(', ')}`));
+    if(plan.length>10) log(`   …and ${plan.length-10} more — every one is in the CSV.`);
+
+    const rows=[['company_kept','record_kept_id','areas_after','record_removed','record_removed_id','removed_areas','website']];
+    plan.forEach(p=>p.remove.forEach(r=>rows.push([p.keep.name,p.keep.id,p.areas.join(';'),r.name,r.id,_alAreas(r).join(';'),p.keep.website||''])));
+    _alCsv(rows,'AfterLife_published_duplicates.csv');
+    log('Downloaded AfterLife_published_duplicates.csv — open it and check before applying.','ok');
+
+    AL_PLAN=plan;
+    if(btn){ btn.textContent=`▲ Apply: merge ${plan.length} compan(ies), remove ${removing} record(s)`;
+             btn.style.background='linear-gradient(135deg,#d98324,#b3651a)'; btn.style.color='#fff'; }
+    log('Nothing has changed yet. Press the button again to apply it.','wn');
+  }catch(e){ log('Duplicate check failed: '+e.message,'er'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+
+async function _alApplyPlan(){
+  const btn=$('alDedupeBtn'), plan=AL_PLAN; if(!plan) return;
+  const removing=plan.reduce((n,p)=>n+p.remove.length,0);
+  if(!confirm(`Merge ${plan.length} compan(ies) on the LIVE AfterLife site and permanently delete ${removing} duplicate record(s)?\n\nThe survivor for each keeps every postcode area, so no coverage is lost. This cannot be undone from here.`)) return;
+  if(btn) btn.disabled=true;
+  try{
+    // Widen the survivors FIRST. Deleting a record whose areas had not yet moved onto the survivor would
+    // drop that company out of those areas entirely.
+    const survivors=plan.map(p=>({ id:p.keep.id, name:p.keep.name, category:p.keep.category,
+      categoryLabel:p.keep.categoryLabel, areas:p.areas, area:p.areas[0]||p.keep.area,
+      areaCount:p.areas.length, national:p.areas.length>=NATIONAL_AT, tier:tierFor(p.areas.length),
+      website:p.keep.website||undefined }));
+    for(let i=0;i<survivors.length;i+=100){
+      const d=await _alPost({action:'import',suppliers:survivors.slice(i,i+100)});
+      if(!d.ok){ log('Widening the surviving records failed, so NOTHING has been deleted: '+(d.detail||JSON.stringify(d.result||{})),'er'); return; }
+      log(`  updated ${Math.min(i+100,survivors.length)}/${survivors.length} surviving record(s)`);
+    }
+    const ids=[].concat(...plan.map(p=>p.remove.map(r=>r.id)));
+    let gone=0;
+    for(let i=0;i<ids.length;i+=200){
+      const d=await _alPost({action:'delete',ids:ids.slice(i,i+200)});
+      if(!d.ok){ log('Delete failed after '+gone+' record(s): '+(d.detail||JSON.stringify(d.result||{})),'er'); return; }
+      gone+=(d.result&&d.result.deleted)||0;
+      log(`  removed ${gone}/${ids.length} duplicate record(s)`);
+    }
+    log(`✓ Done. ${plan.length} compan(ies) now hold ONE record each on AfterLife, covering every area they serve; `
+      + `${gone} duplicate record(s) removed.`,'ok');
+    AL_PLAN=null;
+    if(btn){ btn.textContent='⧉ Check the published AfterLife list for duplicates'; btn.style.background=''; btn.style.color=''; }
+  }catch(e){ log('Apply failed: '+e.message,'er'); }
+  finally{ if(btn) btn.disabled=false; }
+}
+
 /* ---------- shared candidate POOL (single-area AND region sweeps use the same merge/dedupe) ---------- */
 // generic mailbox hosts — an email at one of these is NOT a firm identity (many firms share gmail)
 const GENERIC_MAIL=new Set(['gmail.com','googlemail.com','outlook.com','hotmail.com','hotmail.co.uk','yahoo.com','yahoo.co.uk','ymail.com','icloud.com','me.com','aol.com','live.com','live.co.uk','msn.com','btinternet.com','btconnect.com','sky.com','talktalk.net','virginmedia.com','mail.com','protonmail.com','gmx.com','tiscali.co.uk']);
@@ -1286,20 +1453,34 @@ function collapseNationalFirms(){
 }
 
 /* ---------- ⧉ Remove duplicates ----------
-   Two DIFFERENT things get called "a duplicate" here, and only one of them is junk:
+   ONE ROW PER COMPANY. No area threshold, no "only if it's national" — a company that appears anywhere in
+   the grid more than once ends up as a single row carrying every postcode area it covers, so it shows once.
 
-     1. The SAME firm listed twice in the SAME postcode area. Junk. The store's unique key is name+area,
-        so "Dillys" and "Dillys Bespoke Florist" in CO are two rows by definition and nothing has ever
-        removed them. This merges them, keeping the most complete row and taking anything it is missing
-        (email, phone, website, and the vetting) from the one it absorbs.
+   It runs in two passes:
+     1. Within one postcode area, merge rows that are the same firm — including ones that only match by
+        name, since "Dillys" and "Dillys Bespoke Florist" in CO are the same shop under two spellings.
+     2. Across ALL areas, merge rows that are the same firm, keeping the full list of areas on the survivor.
 
-     2. The same firm listed in SEVERAL areas. NOT junk — that is the firm's footprint, and it is how a
-        national supplier gets found in every area it covers. Publishing already collapses these into one
-        record carrying areas[]. This function counts them and leaves them alone; ⧉ Collapse national
-        firms is there for when you want them as single rows in the grid too.
+   Pass 2 requires PROOF of identity — the same website, Companies House number, or email domain. It will
+   not merge on a name alone, because "The Flower Shop" in Southampton and "The Flower Shop" in Derby are
+   two different businesses that happen to share a name, and fusing them would delete a real supplier and
+   put the wrong contact details on the one that survived. Rows with no website and no company number are
+   therefore left alone across areas, and the log says how many.
+
+   The survivor keeps the fullest contact details and the vetting of everything it absorbs.
 
    Nothing here touches the database. It cleans the grid in front of you; save the grid afterwards if you
    want it kept, and run dedupe_store.py to clear the same duplicates out of the stored data. */
+// A firm's identity ACROSS areas — proof only. Deliberately no name fallback: see above.
+function strongFirmKey(l){
+  const d=siteDomOf(l);                       if(d) return 'd:'+d;
+  const c=chOf(l);                            if(c) return 'c:'+c;
+  const e=emailDomOf({emails:l.emails});      if(e) return 'm:'+e;
+  return '';
+}
+const _fullness = l => (((l.alDescription||'').trim()?4:0) + ((l.alVerdict||'')?2:0)
+  + (emailsOf(l).length?2:0) + ((l.phone||'').trim()?1:0)
+  + ((l.postcode||'').trim()?1:0) + ((l.address||'').trim()?1:0));
 function removeDuplicates(){
   if(!LEADS.length){ log('Nothing in the grid to de-duplicate.','wn'); return; }
   const before=LEADS.length;
@@ -1317,13 +1498,32 @@ function removeDuplicates(){
     + `and every survivor kept the fullest contact details and the vetting of the rows it absorbed.`,'ok');
   else log('⧉ No same-area duplicates found — every firm is listed once per postcode area.','ok');
 
-  // Report the multi-area firms rather than silently merging them: they are the footprint, not junk.
-  const fps=firmFootprints(LEADS); let multi=0, extraRows=0, national=0;
-  fps.forEach(f=>{ if(f.rows.length>1){ multi++; extraRows+=f.rows.length-1; }
-                   if(f.areas.size>=NATIONAL_AT) national++; });
-  if(multi) log(`${multi} firm(s) appear in more than one area (${extraRows} extra row(s), ${national} of them in ${NATIONAL_AT}+ areas). `
-    + `These are NOT duplicates — publishing sends each as ONE record covering all its areas. `
-    + `Use ⧉ Collapse national firms if you also want them as single rows here.`,'wn');
+  // PASS 2 — the same company in different areas becomes ONE row covering all of them.
+  const groups=new Map();
+  LEADS.forEach(l=>{ const k=strongFirmKey(l); if(!k) return;
+    if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(l); });
+  const drop=new Set(); let firmsCollapsed=0, rowsCollapsed=0, widest=0, widestName='';
+  groups.forEach(g=>{
+    if(g.length<2) return;
+    const areas=[...new Set([].concat(...g.map(l=>[...areasOfLead(l)])))].sort();
+    const best=g.slice().sort((a,b)=>_fullness(b)-_fullness(a))[0];
+    g.forEach(l=>{ if(l!==best){ mergeLead(best,l); drop.add(l); rowsCollapsed++; } });
+    best.areasList=areas; best.alTier=tierFor(areas.length);
+    firmsCollapsed++;
+    if(areas.length>widest){ widest=areas.length; widestName=best.name; }
+  });
+  if(drop.size){
+    LEADS=LEADS.filter(l=>!drop.has(l));
+    log(`⧉ ${firmsCollapsed} company(ies) were listed in more than one area — each is now a SINGLE row `
+      + `covering all of them (${rowsCollapsed} row(s) merged away`
+      + (widestName?`; the widest is ${widestName} across ${widest} areas`:'') + `). `
+      + `The grid is ${LEADS.length} row(s). Each publishes once, carrying every area it covers.`,'ok');
+  }
+  // Anything with no website, company number or email cannot be matched across areas without guessing.
+  const noProof=LEADS.filter(l=>!strongFirmKey(l)).length;
+  if(noProof) log(`${noProof} row(s) have no website, company number or email, so they could not be matched `
+    + `across areas — two firms sharing a name in different towns are usually different businesses. `
+    + `Run 🔎 Find websites FREE, then press this again to catch the rest.`,'wn');
 
   render(); updateSelCount(); setStats();
 }
