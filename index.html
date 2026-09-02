@@ -1478,6 +1478,55 @@ function strongFirmKey(l){
   const e=emailDomOf({emails:l.emails});      if(e) return 'm:'+e;
   return '';
 }
+
+/* ---------- one company, however many listings ----------
+   A single key is not enough, because one operator runs several branded websites. Simon Addison sells the
+   same service through simonaddisonhighlandpiper.co.uk, simonaddisonpiping.co.uk, thefuneralpiper.co.uk
+   and theherefordshirepiper.co.uk; Hire a Bagpiper is also The Yorkshire Bagpiper. Grouping on the website
+   alone leaves those as four suppliers and two suppliers. What ties them together is the PHONE NUMBER.
+
+   So rows are chained through EVERY shared signal — website domain, Companies House number, email domain,
+   phone — and anything transitively connected is one company. Different websites no longer keep two rows
+   apart when the same phone answers both.
+
+   The guard is on the phone alone: a number shared by more than a handful of differently-named firms is a
+   switchboard, an answering service or a scrape error rather than one operator, so above that it stops
+   counting as identity. Nothing else can chain firms together, and a row carrying none of these signals
+   stays on its own — it is never merged on a name across areas, because two "The Flower Shop"s in
+   different towns are two different shops. */
+const PHONE_SHARE_MAX = 6;
+const phoneKey = l => {
+  let d = String(l.phone||'').replace(/[^0-9]/g,'');
+  if(d.startsWith('44')) d = '0'+d.slice(2);
+  return d.length>=10 ? d : '';
+};
+function groupSameCompany(rows){
+  rows = rows || [];
+  const parent = rows.map((_,i)=>i);
+  const find = x => { while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; };
+  const union = (a,b) => { const ra=find(a), rb=find(b); if(ra!==rb) parent[ra]=rb; };
+  // how many DIFFERENT firm names answer on each phone
+  const phoneNames = new Map();
+  rows.forEach(l=>{ const p=phoneKey(l); if(!p) return;
+    if(!phoneNames.has(p)) phoneNames.set(p,new Set()); phoneNames.get(p).add(nameKey(l.name)); });
+  const seen = new Map();
+  rows.forEach((l,i)=>{
+    const keys=[];
+    const d=siteDomOf(l);                     if(d) keys.push('d:'+d);
+    const c=chOf(l);                          if(c) keys.push('c:'+c);
+    const m=emailDomOf({emails:l.emails});    if(m) keys.push('m:'+m);
+    const p=phoneKey(l);
+    if(p && phoneNames.get(p).size<=PHONE_SHARE_MAX) keys.push('p:'+p);
+    // Within ONE postcode area the same name is the same branch — that is the only place a name is
+    // allowed to join two rows, and it is what catches a row carrying no contact details at all.
+    const nk=nameKey(l.name);
+    if(nk) keys.push('n:'+nk+'|'+String(l.batchArea||l.area||'').toUpperCase());
+    keys.forEach(k=>{ if(seen.has(k)) union(seen.get(k),i); else seen.set(k,i); });
+  });
+  const out=new Map();
+  rows.forEach((l,i)=>{ const r=find(i); if(!out.has(r)) out.set(r,[]); out.get(r).push(l); });
+  return [...out.values()];
+}
 const _fullness = l => (((l.alDescription||'').trim()?4:0) + ((l.alVerdict||'')?2:0)
   + (emailsOf(l).length?2:0) + ((l.phone||'').trim()?1:0)
   + ((l.postcode||'').trim()?1:0) + ((l.address||'').trim()?1:0));
@@ -1498,12 +1547,10 @@ function removeDuplicates(){
     + `and every survivor kept the fullest contact details and the vetting of the rows it absorbed.`,'ok');
   else log('⧉ No same-area duplicates found — every firm is listed once per postcode area.','ok');
 
-  // PASS 2 — the same company in different areas becomes ONE row covering all of them.
-  const groups=new Map();
-  LEADS.forEach(l=>{ const k=strongFirmKey(l); if(!k) return;
-    if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(l); });
+  // PASS 2 — the same company in different areas becomes ONE row covering all of them, chained through
+  // every shared signal including the phone, so one operator's several branded sites end up as one row.
   const drop=new Set(); let firmsCollapsed=0, rowsCollapsed=0, widest=0, widestName='';
-  groups.forEach(g=>{
+  groupSameCompany(LEADS).forEach(g=>{
     if(g.length<2) return;
     const areas=[...new Set([].concat(...g.map(l=>[...areasOfLead(l)])))].sort();
     const best=g.slice().sort((a,b)=>_fullness(b)-_fullness(a))[0];
@@ -1519,10 +1566,10 @@ function removeDuplicates(){
       + (widestName?`; the widest is ${widestName} across ${widest} areas`:'') + `). `
       + `The grid is ${LEADS.length} row(s). Each publishes once, carrying every area it covers.`,'ok');
   }
-  // Anything with no website, company number or email cannot be matched across areas without guessing.
-  const noProof=LEADS.filter(l=>!strongFirmKey(l)).length;
-  if(noProof) log(`${noProof} row(s) have no website, company number or email, so they could not be matched `
-    + `across areas — two firms sharing a name in different towns are usually different businesses. `
+  // Anything with no website, company number, email or phone cannot be matched across areas without guessing.
+  const noProof=LEADS.filter(l=>!strongFirmKey(l)&&!phoneKey(l)).length;
+  if(noProof) log(`${noProof} row(s) carry no website, company number, email or phone, so they could not be `
+    + `matched across areas — two firms sharing a name in different towns are usually different businesses. `
     + `Run 🔎 Find websites FREE, then press this again to catch the rest.`,'wn');
 
   render(); updateSelCount(); setStats();
@@ -3868,10 +3915,8 @@ function pickedCatLabel(){
    Two rows are the same company only on proof — a shared website, Companies House number or email domain —
    or, within a single postcode area, the same name. Two "The Flower Shop"s in different towns stay apart. */
 function collapseForPublish(rows){
-  const groups=new Map();
-  (rows||[]).forEach(l=>{ const k=firmIdentity(l); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(l); });
   const out=[];
-  groups.forEach(g=>{
+  groupSameCompany(rows||[]).forEach(g=>{
     const areas=[...new Set([].concat(...g.map(l=>[...areasOfLead(l)])))].sort();
     const src=g.slice().sort((a,b)=>_fullness(b)-_fullness(a));
     const best=Object.assign({},src[0]);
@@ -4292,8 +4337,11 @@ async function publishAfterLife(){
   // whole footprint. De-duplication is by website domain (see firmIdentity), which is what actually
   // identifies a business — two listings on one domain are one company however they were spelled.
   const slugId=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);
+  // Grouping used to be by website domain alone, which left one operator's several branded sites as
+  // several suppliers — Simon Addison went up four times. Rows are now chained through every shared
+  // signal, the phone included, so one company publishes once.
   const groups=new Map();
-  approve.forEach(l=>{const k=firmIdentity(l);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l);});
+  groupSameCompany(approve).forEach((g,gi)=>groups.set(firmIdentity(g[0])+'#'+gi, g));
 
   const takenIds=new Map();
   const suppliers=[...groups.entries()].map(([key,g])=>{
