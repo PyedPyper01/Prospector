@@ -3857,11 +3857,50 @@ function pickedCatLabel(){
   const hit=(typeof AL_CATEGORIES!=='undefined')?AL_CATEGORIES.find(c=>c.id===id):null;
   return hit?hit.label:'';
 }
+/* ---------- one row per COMPANY for publishing ----------
+   Publishing to AfterLife has always grouped by firm, so a company found in eighty postcode areas goes up
+   as ONE record carrying all eighty. The CRM publish did not: it sent the ticked rows straight through, so
+   the same company arrived once per area — 590 rows for 84 companies — and a rep saw eighty copies of one
+   bagpiper.
+
+   This collapses a set of rows to one per company WITHOUT touching the grid. It returns copies: the row
+   with the most on it, with anything it is missing filled in from its siblings, plus the full area list.
+   Two rows are the same company only on proof — a shared website, Companies House number or email domain —
+   or, within a single postcode area, the same name. Two "The Flower Shop"s in different towns stay apart. */
+function collapseForPublish(rows){
+  const groups=new Map();
+  (rows||[]).forEach(l=>{ const k=firmIdentity(l); if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(l); });
+  const out=[];
+  groups.forEach(g=>{
+    const areas=[...new Set([].concat(...g.map(l=>[...areasOfLead(l)])))].sort();
+    const src=g.slice().sort((a,b)=>_fullness(b)-_fullness(a));
+    const best=Object.assign({},src[0]);
+    // fill only what the survivor lacks, from the rows it stands for
+    src.slice(1).forEach(l=>{
+      ['emails','phone','website','contact','address','postcode','district','companyNo','register',
+       'memberships','frn','fca','reg','regStatus','alDescription','alNotes','independence'].forEach(f=>{
+        if(!String(best[f]||'').trim() && String(l[f]||'').trim()) best[f]=l[f]; });
+      if(best.alVerdict==null && l.alVerdict!=null){ best.alVerdict=l.alVerdict;
+        best.alPriority=l.alPriority; best.alFit=l.alFit; best.alQuality=l.alQuality; }
+    });
+    best.areasList=areas;
+    best.alTier=tierFor(areas.length);
+    out.push(best);
+  });
+  return out;
+}
+
 function crmRow(l,vetted){
+  const areas=(l.areasList&&l.areasList.length) ? l.areasList
+             : [String(l.batchArea||l.area||'').toUpperCase()].filter(Boolean);
   return {
     name:l.name||'', contact:l.contact||'', phone:l.phone||'', emails:l.emails||'',
     website:l.website||'', address:l.address||'', district:l.district||'',
     area:l.batchArea||l.area||'',
+    // The whole footprint travels with the record, so the CRM shows one account covering forty areas
+    // rather than forty unrelated local leads.
+    areas:areas.join(';'), area_count:areas.length,
+    national:areas.length>=NATIONAL_AT?'YES':'', tier:l.alTier||tierFor(areas.length),
     category_raw:pickedCatLabel()||l.pubCatLabel||l.batchCategory||(($('term').value||'').split('\n')[0].trim()),
     rating:l.rating??'', reviews:l.reviews||'', independent:l.independent||'',
     register:l.register||l.memberships||'', reg_status:l.fca||l.reg||l.regStatus||'', frn:l.frn||'',
@@ -3916,10 +3955,15 @@ async function publishCRM(){
   const picks=LEADS.filter(l=>l.alSelect);
   if(!picks.length){log('Nothing selected — tick the suppliers you want in the ✓ column first.','er');return;}
   if(running)return;
-  if(!confirm(`Publish ${picks.length} selected lead(s) to the Sales CRM approval queue?\n\nPhone and email go with them (this is the sales pipeline, not the public directory). Nothing reaches a rep's pipeline until it is reviewed and approved in the CRM.`))return;
+  const firms=collapseForPublish(picks);
+  const saved=picks.length-firms.length;
+  if(!confirm(`Publish ${firms.length} compan(ies) to the Sales CRM approval queue?\n\n`
+    + (saved ? `You ticked ${picks.length} row(s); ${saved} of them are the same companies listed in other postcode areas, so each goes ONCE carrying every area it covers.\n\n` : '')
+    + `Phone and email go with them (this is the sales pipeline, not the public directory). Nothing reaches a rep's pipeline until it is reviewed and approved in the CRM.`))return;
   running=true;const b=$('publishCrmBtn');if(b)b.disabled=true;setStats();
   try{
-    const t=await crmPost('selected',picks.map(l=>crmRow(l,true)));
+    if(saved) log(`${picks.length} ticked row(s) → ${firms.length} compan(ies); ${saved} per-area duplicate(s) merged, each carrying its full area list.`,'ok');
+    const t=await crmPost('selected',firms.map(l=>crmRow(l,true)));
     log('CRM publish complete — '+crmSummary(t),'ok');
   }catch(e){log('CRM publish failed — '+e.message,'er');}
   running=false;if(b)b.disabled=false;setStats();
@@ -3928,10 +3972,15 @@ async function publishMasterCRM(){
   if(MODE!=='functions'){log('CRM publish needs the Netlify deployment (functions offline).','er');return;}
   if(!BATCH.master.length){log('Nothing in the master set yet — run a batch first (master is held in memory for this session).','er');return;}
   if(running)return;
-  if(!confirm(`Publish the whole MASTER set (${BATCH.master.length} leads) to the Sales CRM approval queue?\n\nThese are pre-vetting rows — they arrive badged UNVETTED and the reviewer vets them in the queue. Safe to re-run: already-imported rows refresh rather than duplicate.`))return;
+  const mFirms=collapseForPublish(BATCH.master);
+  const mSaved=BATCH.master.length-mFirms.length;
+  if(!confirm(`Publish the MASTER set to the Sales CRM approval queue — ${mFirms.length} compan(ies)?\n\n`
+    + (mSaved ? `The master set holds ${BATCH.master.length} rows; ${mSaved} are the same companies in other postcode areas, so each goes ONCE carrying every area it covers.\n\n` : '')
+    + `These are pre-vetting rows — they arrive badged UNVETTED and the reviewer vets them in the queue. Safe to re-run: already-imported rows refresh rather than duplicate.`))return;
   running=true;setStats();
   try{
-    const t=await crmPost('master',BATCH.master.map(l=>crmRow(l,false)));
+    if(mSaved) log(`Master set ${BATCH.master.length} row(s) → ${mFirms.length} compan(ies); ${mSaved} per-area duplicate(s) merged.`,'ok');
+    const t=await crmPost('master',mFirms.map(l=>crmRow(l,false)));
     log('MASTER → CRM complete — '+crmSummary(t),'ok');
   }catch(e){log('MASTER → CRM failed — '+e.message,'er');}
   running=false;setStats();
