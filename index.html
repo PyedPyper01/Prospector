@@ -4678,8 +4678,21 @@ function exportBrevo(){
 }
 function exportData(kind){
   if(!LEADS.length)return;
-  const cols=['area','district','name','source','saif_member','trading_brands','independent','register','aiType','aiReason','regStatus','fca','reg','frn','contact','phone','emails','website','address','rating','reviews','companyNo','sic','placeId'];
-  const data=LEADS.map(l=>{const o={};cols.forEach(c=>o[c]=l[c]??'');o.source=l.source||'discovery';o.saif_member=(/^(y|yes|true|1)$/i.test(String(l.saifMember||'')))?'Y':'';o.trading_brands=(l.tradingBrands||[]).join('; ');return o;});
+  // Ordered by postcode area, then by firm within it, and every row carries the
+  // size of its own area — so the file reads as one block per area and the count
+  // is on the page rather than needing to be worked out. area_count is a COLUMN,
+  // not a subtotal row: a subtotal row is not a lead, and it would have to be
+  // stripped again by anything that reads the file back.
+  const AREA_OF=l=>String(l.area||l.batchArea||'').toUpperCase()||'(no area)';
+  const areaCount={};
+  LEADS.forEach(l=>{const a=AREA_OF(l);areaCount[a]=(areaCount[a]||0)+1;});
+  const ordered=LEADS.slice().sort((x,y)=>{
+    const ax=AREA_OF(x), ay=AREA_OF(y);
+    if(ax!==ay) return ax<ay?-1:1;
+    return String(x.name||'').localeCompare(String(y.name||''));
+  });
+  const cols=['area','area_count','category','district','name','source','saif_member','trading_brands','independent','register','aiType','aiReason','regStatus','fca','reg','frn','contact','phone','emails','website','address','rating','reviews','companyNo','sic','placeId'];
+  const data=ordered.map(l=>{const o={};cols.forEach(c=>o[c]=l[c]??'');o.area=AREA_OF(l);o.area_count=areaCount[AREA_OF(l)];o.category=l.pubCatLabel||l.batchCategory||l.trade||'';o.source=l.source||'discovery';o.saif_member=(/^(y|yes|true|1)$/i.test(String(l.saifMember||'')))?'Y':'';o.trading_brands=(l.tradingBrands||[]).join('; ');return o;});
   if(kind==='csv'){
     const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
     const csv=[cols.join(','),...data.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n');
@@ -4689,7 +4702,10 @@ function exportData(kind){
     XLSX.utils.book_append_sheet(wb,ws,'Leads');
     XLSX.writeFile(wb,`prospector_${$('area').value||'export'}_${Date.now()}.xlsx`);
   }
-  log(`Exported ${LEADS.length} leads as ${kind.toUpperCase()}.`,'ok');
+  const areasOut=Object.keys(areaCount).sort();
+  log(`Exported ${LEADS.length} leads as ${kind.toUpperCase()}, ordered by postcode area — `
+    + areasOut.map(a=>`${a} ${areaCount[a]}`).join(' · ')
+    + `. Each row carries its area's count in the area_count column.`,'ok');
 }
 
 /* ---------- connection mode: functions (full) vs direct browser (search-only) ---------- */
