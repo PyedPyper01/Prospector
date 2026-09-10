@@ -3984,6 +3984,17 @@ async function crmPost(mode,rows){
   return tot;
 }
 function crmSummary(t){
+  // "CRM publish complete — 0 new in the approval queue, 0 refreshed." reads like success. It is not:
+  // it means the CRM accepted the request and wrote nothing, and there is no way to tell from that line
+  // whether the rows were skipped, flagged, or never arrived. Say so, and say what to do about it.
+  if(!t.inserted && !t.refreshed){
+    let why='';
+    if(t.inPipeline)     why=` All ${t.inPipeline} are ALREADY LIVE in the pipeline, so the CRM left them alone — they are not in the approval queue because they are past it.`;
+    else if(t.invalid)   why=` ${t.invalid} row(s) had no firm name and were rejected.`;
+    else if(t.emailDupes)why=` ${t.emailDupes} were flagged as email duplicates of records the CRM already holds.`;
+    else                 why=` The CRM accepted the request and wrote nothing. Check the approval queue's BATCH and AREA filters — a filter left on from an earlier publish hides everything sent since.`;
+    return `NOTHING WAS WRITTEN.${why}${t.partnerFlagged?` ${t.partnerFlagged} carry the "already invited to AfterLife" flag.`:''}`;
+  }
   let s=`${t.inserted} new in the approval queue, ${t.refreshed} refreshed`;
   if(t.failedBatches&&t.failedBatches.length){
     const n=t.failedBatches.reduce((a,b)=>a+b.rows,0);
@@ -4008,8 +4019,19 @@ async function publishCRM(){
   running=true;const b=$('publishCrmBtn');if(b)b.disabled=true;setStats();
   try{
     if(saved) log(`${picks.length} ticked row(s) → ${firms.length} compan(ies); ${saved} per-area duplicate(s) merged, each carrying its full area list.`,'ok');
-    const t=await crmPost('selected',firms.map(l=>crmRow(l,true)));
-    log('CRM publish complete — '+crmSummary(t),'ok');
+    const rowsOut=firms.map(l=>crmRow(l,true));
+    const t=await crmPost('selected',rowsOut);
+    const wrote=(t.inserted||0)+(t.refreshed||0);
+    log('CRM publish — '+crmSummary(t), wrote?'ok':'er');
+    if(wrote){
+      // The CRM's queue can be filtered by batch and by area, and a filter left on from a previous
+      // publish is the usual reason a publish that worked looks like it did nothing. Say where to look.
+      const batches=[...new Set(rowsOut.map(r=>r.batch).filter(Boolean))];
+      const areas=[...new Set(rowsOut.map(r=>r.area).filter(Boolean))];
+      log(`Find them in the CRM approval queue under batch ${batches.length?batches.join(', '):'(no batch)'}`
+        + `, headline area ${areas.slice(0,6).join(', ')}${areas.length>6?` +${areas.length-6} more`:''}. `
+        + `If the queue looks empty, clear its batch and area filters first.`,'wn');
+    }
   }catch(e){log('CRM publish failed — '+e.message,'er');}
   running=false;if(b)b.disabled=false;setStats();
 }
