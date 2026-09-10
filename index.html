@@ -282,6 +282,10 @@ button.primary .muted, button.primary .muted *, .primary .muted {
       <button class="ghost small" id="publishBtn" onclick="publishAfterLife()" disabled style="width:100%;margin-top:8px">▲ Publish selected to AfterLife</button>
       <button class="ghost small" id="publishCrmBtn" onclick="publishCRM()" disabled style="width:100%;margin-top:8px">▲ Publish selected to the Sales CRM</button>
       <div class="muted" style="font-size:11px;margin-top:3px">Sends the ticked leads (with phone &amp; email) to the CRM approval queue — nothing reaches a rep's pipeline until it's reviewed there.</div>
+      <label style="display:flex;gap:6px;align-items:flex-start;font-size:11.5px;color:var(--dim);margin-top:6px;cursor:pointer">
+        <input type="checkbox" id="crmForce" style="margin-top:2px">
+        <span><b>Override</b> — put them back in the approval queue even if the CRM already holds them past it or archived. Use this when you have cleared them out of the CRM by hand and it still says "already live in the pipeline". It can pull a record a rep is working back into review.</span>
+      </label>
       <button class="ghost small" style="width:100%;margin-top:6px" onclick="publishMasterCRM()">▲ Publish MASTER to the Sales CRM</button>
       <div class="muted" style="font-size:11px;margin-top:3px">Sends every master-set lead to the CRM approval queue, badged <b>Unvetted</b> — the reviewer does the vetting there. Safe to re-run; already-imported rows just refresh.</div>
       <div style="border:1px dashed var(--line);border-radius:8px;padding:8px;margin-top:10px">
@@ -3960,20 +3964,20 @@ function crmRow(l,vetted){
     notes:l.alNotes||'', description:l.alDescription||'', vetted:!!vetted
   };
 }
-async function crmPost(mode,rows){
+async function crmPost(mode,rows,force){
   // 100 a time: a bigger batch used to run the receiving function past its
   // ten-second limit, which cut a publish off part-way through.
   const chunks=[];for(let i=0;i<rows.length;i+=100)chunks.push(rows.slice(i,i+100));
-  const tot={inserted:0,refreshed:0,inPipeline:0,partnerFlagged:0,emailDupes:0,invalid:0,received:0,unaccounted:0};
+  const tot={inserted:0,refreshed:0,forced:0,inPipeline:0,archived:0,partnerFlagged:0,emailDupes:0,invalid:0,received:0,unaccounted:0};
   const rejected=[];
   const failed=[];
   for(let i=0;i<chunks.length;i++){
     log(`  CRM publish ${i+1}/${chunks.length} (${chunks[i].length} rows)…`);
     try{
-      const r=await fetch('/.netlify/functions/publishcrm',{method:'POST',body:JSON.stringify({mode,rows:chunks[i]})});
+      const r=await fetch('/.netlify/functions/publishcrm',{method:'POST',body:JSON.stringify({mode,rows:chunks[i],force:!!force})});
       const d=await r.json();
       if(!d.ok) throw new Error(d.error||('HTTP '+r.status));
-      ['inserted','refreshed','inPipeline','partnerFlagged','emailDupes','invalid','received','unaccounted']
+      ['inserted','refreshed','forced','inPipeline','archived','partnerFlagged','emailDupes','invalid','received','unaccounted']
         .forEach(k=>tot[k]+=(d[k]||0));
       (d.rejectedSample||[]).forEach(n=>{ if(rejected.length<10) rejected.push(n); });
     }catch(e){
@@ -3987,7 +3991,7 @@ async function crmPost(mode,rows){
   tot.rejectedSample=rejected;
   // Every row sent must come back accounted for. A count that does not add up is the shape of the fault
   // Dan hit — the CRM answering 200 while quietly discarding rows — so it is stated, not inferred.
-  const seen=tot.inserted+tot.refreshed+tot.inPipeline+tot.invalid;
+  const seen=tot.inserted+tot.refreshed+tot.forced+tot.inPipeline+tot.archived+tot.invalid;
   if(tot.received && seen<tot.received)
     log(`⚠ The CRM was sent ${tot.received} row(s) and accounted for ${seen}. `
       + `${tot.received-seen} row(s) are unexplained — do not treat this publish as complete.`,'er');
@@ -4000,7 +4004,7 @@ function crmSummary(t){
   // "CRM publish complete — 0 new in the approval queue, 0 refreshed." reads like success. It is not:
   // it means the CRM accepted the request and wrote nothing, and there is no way to tell from that line
   // whether the rows were skipped, flagged, or never arrived. Say so, and say what to do about it.
-  if(!t.inserted && !t.refreshed){
+  if(!t.inserted && !t.refreshed && !t.forced){
     let why='';
     // A batch that ERRORED is the first thing to say. Pointing at the queue's filters when every batch
     // came back with an error sent Dan looking for a filter while the CRM was returning
@@ -4012,18 +4016,22 @@ function crmSummary(t){
         + `about ${n} lead(s)): ${reasons.join(' | ')}. This is not a filter and not something to retry blindly; `
         + `the CRM itself is refusing the write.`;
     }
-    if(t.inPipeline)     why=` All ${t.inPipeline} are ALREADY LIVE in the pipeline, so the CRM left them alone — they are not in the approval queue because they are past it.`;
+    if(t.inPipeline||t.archived) why=` ${[t.inPipeline?`${t.inPipeline} are already PAST the approval queue`:'',t.archived?`${t.archived} are ARCHIVED`:''].filter(Boolean).join(' and ')}`
+      + ` in the CRM, so it left them alone. Removing them from the CRM by hand does not change this —`
+      + ` tick "Override" under the CRM publish button and send again to put them back in the queue.`;
     else if(t.invalid)   why=` ${t.invalid} row(s) had no firm name and were rejected.`;
     else if(t.emailDupes)why=` ${t.emailDupes} were flagged as email duplicates of records the CRM already holds.`;
     else                 why=` The CRM accepted the request and wrote nothing. Check the approval queue's BATCH and AREA filters — a filter left on from an earlier publish hides everything sent since.`;
     return `NOTHING WAS WRITTEN.${why}${t.partnerFlagged?` ${t.partnerFlagged} carry the "already invited to AfterLife" flag.`:''}`;
   }
   let s=`${t.inserted} new in the approval queue, ${t.refreshed} refreshed`;
+  if(t.forced)s+=`, ${t.forced} FORCED back into the queue from past it or from the archive`;
+  if(t.archived)s+=`, ${t.archived} left in the CRM's archive (tick Override to bring them back)`;
   if(t.failedBatches&&t.failedBatches.length){
     const n=t.failedBatches.reduce((a,b)=>a+b.rows,0);
     s+=`; ${t.failedBatches.length} batch(es) FAILED covering about ${n} leads — publish again to retry just those`;
   }
-  if(t.inPipeline)s+=`, ${t.inPipeline} already live in the pipeline (left untouched)`;
+  if(t.inPipeline)s+=`, ${t.inPipeline} already live in the pipeline (left untouched — tick Override to pull them back into the queue)`;
   if(t.partnerFlagged)s+=`, ${t.partnerFlagged} flagged as already invited to AfterLife`;
   if(t.emailDupes)s+=`, ${t.emailDupes} flagged as email duplicates`;
   if(t.invalid)s+=`, ${t.invalid} unusable (no firm name)`;
@@ -4036,15 +4044,18 @@ async function publishCRM(){
   if(running)return;
   const firms=collapseForPublish(picks);
   const saved=picks.length-firms.length;
+  const force=!!($('crmForce')&&$('crmForce').checked);
   if(!confirm(`Publish ${firms.length} compan(ies) to the Sales CRM approval queue?\n\n`
     + (saved ? `You ticked ${picks.length} row(s); ${saved} of them are the same companies listed in other postcode areas, so each goes ONCE carrying every area it covers.\n\n` : '')
+    + (force ? `OVERRIDE IS ON. Any of these the CRM already holds past the approval queue, or in its archive, will be pulled BACK into review — including a record a rep may be working right now.\n\n` : '')
     + `Phone and email go with them (this is the sales pipeline, not the public directory). Nothing reaches a rep's pipeline until it is reviewed and approved in the CRM.`))return;
   running=true;const b=$('publishCrmBtn');if(b)b.disabled=true;setStats();
   try{
     if(saved) log(`${picks.length} ticked row(s) → ${firms.length} compan(ies); ${saved} per-area duplicate(s) merged, each carrying its full area list.`,'ok');
     const rowsOut=firms.map(l=>crmRow(l,true));
-    const t=await crmPost('selected',rowsOut);
-    const wrote=(t.inserted||0)+(t.refreshed||0);
+    if(force) log('Override is ON — records the CRM holds past the approval queue or in its archive will be pulled back into review.','wn');
+    const t=await crmPost('selected',rowsOut,force);
+    const wrote=(t.inserted||0)+(t.refreshed||0)+(t.forced||0);
     log('CRM publish — '+crmSummary(t), wrote?'ok':'er');
     if(wrote){
       // The CRM's queue can be filtered by batch and by area, and a filter left on from a previous
