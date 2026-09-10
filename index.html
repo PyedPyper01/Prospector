@@ -3969,7 +3969,7 @@ async function crmPost(mode,rows,force){
   // ten-second limit, which cut a publish off part-way through.
   const chunks=[];for(let i=0;i<rows.length;i+=100)chunks.push(rows.slice(i,i+100));
   const tot={inserted:0,refreshed:0,forced:0,inPipeline:0,archived:0,partnerFlagged:0,emailDupes:0,invalid:0,received:0,unaccounted:0};
-  const rejected=[];
+  const rejected=[]; let forceLost=false;
   const failed=[];
   for(let i=0;i<chunks.length;i++){
     log(`  CRM publish ${i+1}/${chunks.length} (${chunks[i].length} rows)…`);
@@ -3980,6 +3980,10 @@ async function crmPost(mode,rows,force){
       ['inserted','refreshed','forced','inPipeline','archived','partnerFlagged','emailDupes','invalid','received','unaccounted']
         .forEach(k=>tot[k]+=(d[k]||0));
       (d.rejectedSample||[]).forEach(n=>{ if(rejected.length<10) rejected.push(n); });
+      // The override crosses a browser, a proxy function and the CRM's own. It was dropped in the middle of
+      // that chain once, and ticking the box simply did nothing. The CRM echoes back whether it actually
+      // received it, so a flag lost in transit is reported instead of looking like the override not working.
+      if(force && d.forceRequested !== true) forceLost=true;
     }catch(e){
       // One bad batch must NOT bin the rest of the publish. Note it, carry on,
       // and say plainly at the end which batches need running again.
@@ -3989,6 +3993,8 @@ async function crmPost(mode,rows,force){
   }
   tot.failedBatches=failed;
   tot.rejectedSample=rejected;
+  if(forceLost) log('⚠ Override was ticked but the CRM says it never received it — the flag was lost on the way. '
+    + 'Nothing was forced. Reload the page (Cmd-Shift-R) and try once more; if it says this again, it is a fault, not a filter.','er');
   // Every row sent must come back accounted for. A count that does not add up is the shape of the fault
   // Dan hit — the CRM answering 200 while quietly discarding rows — so it is stated, not inferred.
   const seen=tot.inserted+tot.refreshed+tot.forced+tot.inPipeline+tot.archived+tot.invalid;

@@ -26,7 +26,11 @@ exports.handler = async (event) => {
     const r = await fetch(CRM_INTAKE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify({ mode, rows }),
+      // `force` has to be FORWARDED, not merely accepted. This function rebuilds the body from scratch, so
+      // anything the page sends is dropped unless it is named right here — which is why ticking Override
+      // changed nothing: the browser sent the flag, this line discarded it, and the CRM went on skipping
+      // every record it already held.
+      body: JSON.stringify({ mode, rows, force: body.force === true }),
     });
     const text = await r.text();
     let data; try { data = JSON.parse(text); } catch (e) { data = { ok: false, error: "CRM replied " + r.status }; }
