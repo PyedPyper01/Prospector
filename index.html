@@ -3964,7 +3964,8 @@ async function crmPost(mode,rows){
   // 100 a time: a bigger batch used to run the receiving function past its
   // ten-second limit, which cut a publish off part-way through.
   const chunks=[];for(let i=0;i<rows.length;i+=100)chunks.push(rows.slice(i,i+100));
-  const tot={inserted:0,refreshed:0,inPipeline:0,partnerFlagged:0,emailDupes:0,invalid:0};
+  const tot={inserted:0,refreshed:0,inPipeline:0,partnerFlagged:0,emailDupes:0,invalid:0,received:0,unaccounted:0};
+  const rejected=[];
   const failed=[];
   for(let i=0;i<chunks.length;i++){
     log(`  CRM publish ${i+1}/${chunks.length} (${chunks[i].length} rows)…`);
@@ -3972,7 +3973,9 @@ async function crmPost(mode,rows){
       const r=await fetch('/.netlify/functions/publishcrm',{method:'POST',body:JSON.stringify({mode,rows:chunks[i]})});
       const d=await r.json();
       if(!d.ok) throw new Error(d.error||('HTTP '+r.status));
-      ['inserted','refreshed','inPipeline','partnerFlagged','emailDupes','invalid'].forEach(k=>tot[k]+=(d[k]||0));
+      ['inserted','refreshed','inPipeline','partnerFlagged','emailDupes','invalid','received','unaccounted']
+        .forEach(k=>tot[k]+=(d[k]||0));
+      (d.rejectedSample||[]).forEach(n=>{ if(rejected.length<10) rejected.push(n); });
     }catch(e){
       // One bad batch must NOT bin the rest of the publish. Note it, carry on,
       // and say plainly at the end which batches need running again.
@@ -3981,6 +3984,16 @@ async function crmPost(mode,rows){
     }
   }
   tot.failedBatches=failed;
+  tot.rejectedSample=rejected;
+  // Every row sent must come back accounted for. A count that does not add up is the shape of the fault
+  // Dan hit — the CRM answering 200 while quietly discarding rows — so it is stated, not inferred.
+  const seen=tot.inserted+tot.refreshed+tot.inPipeline+tot.invalid;
+  if(tot.received && seen<tot.received)
+    log(`⚠ The CRM was sent ${tot.received} row(s) and accounted for ${seen}. `
+      + `${tot.received-seen} row(s) are unexplained — do not treat this publish as complete.`,'er');
+  if(tot.invalid&&rejected.length)
+    log(`The CRM rejected ${tot.invalid} row(s) it could not read: ${rejected.join(', ')}`
+      + `${tot.invalid>rejected.length?` …and ${tot.invalid-rejected.length} more`:''}.`,'er');
   return tot;
 }
 function crmSummary(t){
