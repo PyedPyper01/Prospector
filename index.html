@@ -4002,6 +4002,16 @@ function crmSummary(t){
   // whether the rows were skipped, flagged, or never arrived. Say so, and say what to do about it.
   if(!t.inserted && !t.refreshed){
     let why='';
+    // A batch that ERRORED is the first thing to say. Pointing at the queue's filters when every batch
+    // came back with an error sent Dan looking for a filter while the CRM was returning
+    // "column prospects.archived_at does not exist" on the line above.
+    if(t.failedBatches&&t.failedBatches.length){
+      const n=t.failedBatches.reduce((a,b)=>a+b.rows,0);
+      const reasons=[...new Set(t.failedBatches.map(b=>b.why))];
+      return `NOTHING WAS WRITTEN — the CRM returned an ERROR for every batch (${t.failedBatches.length} batch(es), `
+        + `about ${n} lead(s)): ${reasons.join(' | ')}. This is not a filter and not something to retry blindly; `
+        + `the CRM itself is refusing the write.`;
+    }
     if(t.inPipeline)     why=` All ${t.inPipeline} are ALREADY LIVE in the pipeline, so the CRM left them alone — they are not in the approval queue because they are past it.`;
     else if(t.invalid)   why=` ${t.invalid} row(s) had no firm name and were rejected.`;
     else if(t.emailDupes)why=` ${t.emailDupes} were flagged as email duplicates of records the CRM already holds.`;
