@@ -1305,7 +1305,11 @@ async function runMapsSweep(){
   // for some trades — it puts solicitors' practices under "Legal services" alongside will writers — while
   // the name is a strong one: a solicitors' firm almost always says Solicitors, LLP or Law in its name.
   const nameDrop = cfg.nameDrop ? new RegExp(cfg.nameDrop,'i') : null;
-  let droppedByName = 0;
+  let droppedByName = 0, reassigned = 0, outsideEW = 0;
+  // One firm, one row for the whole run. Adjacent areas return the same firms, and a firm placed under
+  // its own postcode's area can be found from several searches — de-duplicating per area stored it once
+  // per area it was found from.
+  const seen = new Set();
   const PC = /\b([A-Z]{1,2})\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/i;
   MAPS.rows = []; MAPS.stop = false;
   $('mapsRunBtn').disabled = true;
@@ -1317,7 +1321,7 @@ async function runMapsSweep(){
     st.textContent = `${area} (${areaNo}/${areas.length}): finding postcode districts…`;
     const ocs = (await outcodesFor(area)).slice(0, maxOc);
     if(!ocs.length){ log(`${area}: no postcode districts resolved — skipped`,'wn'); continue; }
-    const seen = new Set(); let kept = 0;
+    let kept = 0;
     for(let i=0;i<ocs.length;i++){
       if(MAPS.stop) break;
       const o = ocs[i];
@@ -1335,15 +1339,28 @@ async function runMapsSweep(){
           const site=(p.website||'').trim(); if(!site) continue;
           const dom = site.replace(/^https?:\/\/(www\.)?/,'').split('/')[0].toLowerCase();
           if(seen.has(dom)) continue;
+          seen.add(dom);                 // judged once — a firm dropped here is not re-counted by the next search term
           const cat = p.category||'';
           if(!keep.test(cat) || drop.test(cat)) continue;
           if(nameDrop && nameDrop.test(p.name||'')){ droppedByName++; continue; }
+          // Which area a firm belongs to is decided by ITS OWN postcode, not by which search found it.
+          // The old gate kept a result only when its postcode matched the area being swept, which in a
+          // dense region threw away most of what Google returned: searching EC brought back genuine will
+          // writers in W1W, WC1N, E12, W8 and N1 and every one was dropped — and rarely re-found from its
+          // own area, because Google returns the twenty most relevant and the overlap is heavy. A result
+          // with a postcode now goes to the area that postcode says. A result with a website but NO
+          // premises (a home-based practice that visits clients — what an independent will writer usually
+          // is) used to vanish entirely; it is kept under the area it was found near.
           const m = PC.exec(p.address||'');
-          if(!m || m[1].toUpperCase()!==area) continue;
-          seen.add(dom); kept++;
-          MAPS.rows.push({name:p.name, trade, area, website:site, phone:p.phone||'',
-                          postcode:(m[0]||'').toUpperCase(), address:(p.address||'').replace(/, United Kingdom$/,''),
-                          notes:'Google category: '+cat});
+          const own = m ? m[1].toUpperCase() : '';
+          const homeArea = own && inServiceArea(own) ? own : (m ? '' : area);
+          if(!homeArea){ if(own) outsideEW++; continue; }    // a Scottish / NI postcode — not served
+          if(homeArea!==area) reassigned++;
+          kept++;
+          MAPS.rows.push({name:p.name, trade, area:homeArea, website:site, phone:p.phone||'',
+                          postcode:(m?m[0]:'').toUpperCase(), address:(p.address||'').replace(/, United Kingdom$/,''),
+                          notes:'Google category: '+cat + (m?'':' · no premises address (service-area business), placed by search location')
+                                + (homeArea!==area?` · found from ${area} search`:'')});
         }
       }
     }
@@ -1365,6 +1382,8 @@ async function runMapsSweep(){
   $('mapsRunBtn').disabled = false;
   if(!MAPS.rows.length){ st.textContent = `Nothing found. ${searches} search(es) used.`; $('mapsGridBtn').disabled=true; return; }
   if(droppedByName) log(`${droppedByName} firm(s) dropped on their NAME (${cfg.nameDrop}) — wrong trade for “${trade}” whatever Google filed them as.`,'wn');
+  if(reassigned) log(`${reassigned} firm(s) were found from one area's search but belong to another by their own postcode — stored under their own area, not thrown away.`,'ok');
+  if(outsideEW) log(`${outsideEW} firm(s) skipped — their postcode is outside England & Wales.`,'wn');
   st.innerHTML = `<b>${MAPS.rows.length} firms found and saved</b> across ${areaNo} area(s) · ${searches} search(es) used.`+
     (droppedByName?` ${droppedByName} dropped by name.`:'')+
     (MAPS.stop?' <b>Stopped early</b> — everything found so far is saved.':'')+
