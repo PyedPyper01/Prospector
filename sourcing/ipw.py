@@ -27,6 +27,15 @@ EW = set(("AL B BA BB BD BH BL BN BR BS CA CB CF CH CM CO CR CT CV CW DA DE DH D
           "RH RM S SA SE SG SK SL SM SN SO SP SR SS ST SW SY TA TF TN TQ TR TS TW UB W WA WC WD WF WN WR WS "
           "WV YO").split())
 PC = re.compile(r"^([A-Z]{1,2})\d")
+HARD_WRONG = re.compile(r"solicitor|barrister|chambers|conveyanc|notar", re.I)   # always the wrong trade
+SOFT_WRONG = re.compile(r"\bllp\b|\blaw\b", re.I)                                 # wrong unless…
+IS_WILL_WRITER = re.compile(r"\bwills?\b|will\s*writ", re.I)                       # …the name says wills
+
+
+def wrong_trade(name):
+    """Same rule as trades.json nameDrop / nameSoftDrop / nameKeep — keep the three in step."""
+    n = name or ""
+    return bool(HARD_WRONG.search(n) or (SOFT_WRONG.search(n) and not IS_WILL_WRITER.search(n)))
 
 
 def get(params):
@@ -87,6 +96,10 @@ def main():
         if area not in EW:
             skipped.append((r.get("companyname"), pc or "(no postcode)"))
             continue
+        nm = (r.get("companyname") or m.get("companyname") or "").strip()
+        if wrong_trade(nm):      # the IPW admits solicitors too
+            skipped.append((nm, "solicitors' practice"))
+            continue
         addr = ", ".join(x for x in (r.get("postaladdress1"), r.get("postaladdress2"), r.get("postaladdress3"),
                                      r.get("postaltowncity"), r.get("postalcounty")) if x)
         profile = re.sub(r"\s+", " ", r.get("directoryprofile") or "").strip()
@@ -131,6 +144,17 @@ def main():
     if not APPLY:
         print("\nNothing written to the store. Re-run with --apply to add them.")
         return
+    # The store's key is name + area, and Postgres refuses an insert that carries the same key twice in
+    # one command — a body with two branches in one area, or two members trading under one name, killed a
+    # whole batch of a hundred. Fold those into one row first, keeping the fullest.
+    fullest = {}
+    for r in rows:
+        k = (r["name"].strip().lower(), r["area"])
+        if k not in fullest or sum(bool(v) for v in r.values()) > sum(bool(v) for v in fullest[k].values()):
+            fullest[k] = r
+    if len(fullest) < len(rows):
+        print(f"  {len(rows) - len(fullest)} duplicate name+area row(s) folded before writing")
+    rows = list(fullest.values())
     written = 0
     for i in range(0, len(rows), 100):
         d = kb({"action": "merge", "rows": rows[i:i + 100]})

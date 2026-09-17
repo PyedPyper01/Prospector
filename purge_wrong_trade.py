@@ -23,7 +23,15 @@ APPLY = "--apply" in sys.argv
 
 TRADE = "Will writers & LPA drafters"
 # identical to nameDrop for this trade in trades.json — keep the two in step
-WRONG = re.compile(r"solicitor|\bllp\b|\blaw\b|barrister|chambers|conveyanc|notar", re.I)
+HARD_WRONG = re.compile(r"solicitor|barrister|chambers|conveyanc|notar", re.I)   # always the wrong trade
+SOFT_WRONG = re.compile(r"\bllp\b|\blaw\b", re.I)                                 # wrong unless…
+IS_WILL_WRITER = re.compile(r"\bwills?\b|will\s*writ", re.I)                       # …the name says wills
+
+
+def wrong_trade(name):
+    """Same rule as trades.json nameDrop / nameSoftDrop / nameKeep — keep the three in step."""
+    n = name or ""
+    return bool(HARD_WRONG.search(n) or (SOFT_WRONG.search(n) and not IS_WILL_WRITER.search(n)))
 
 
 def post(payload, tries=3):
@@ -45,7 +53,7 @@ def main():
     rows = d.get("results") or []
     if not rows:
         sys.exit(f"the store returned no rows for {TRADE!r} — stopping: " + json.dumps(d)[:200])
-    wrong = [r for r in rows if WRONG.search(r.get("name") or "")]
+    wrong = [r for r in rows if wrong_trade(r.get("name"))]
     print(f"{len(rows)} rows stored as {TRADE!r}; {len(wrong)} are solicitors' practices by name "
           f"({len(wrong) * 100 // len(rows)}%), {len(rows) - len(wrong)} would remain.\n")
 
@@ -55,7 +63,7 @@ def main():
         w.writerow(["name", "area", "website", "phone", "email", "why"])
         for r in wrong:
             w.writerow([r.get("name"), r.get("area"), r.get("website") or "", r.get("phone") or "",
-                        r.get("email") or "", "name matches: " + WRONG.search(r.get("name") or "").group(0)])
+                        r.get("email") or "", "name matches: " + ((HARD_WRONG.search(r.get("name") or "") or SOFT_WRONG.search(r.get("name") or "")).group(0))])
     print(f"Every one is listed in {out} — open it and check before applying.")
     print("Sample:")
     for r in wrong[:12]:

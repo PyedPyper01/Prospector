@@ -1305,6 +1305,13 @@ async function runMapsSweep(){
   // for some trades — it puts solicitors' practices under "Legal services" alongside will writers — while
   // the name is a strong one: a solicitors' firm almost always says Solicitors, LLP or Law in its name.
   const nameDrop = cfg.nameDrop ? new RegExp(cfg.nameDrop,'i') : null;
+  // Two strengths. nameDrop is decisive: "Solicitors" in the name is the wrong trade whatever else it says,
+  // and "Simpson Solicitors Wills & Probate" goes. nameSoftDrop (LLP, Law) is dropped UNLESS nameKeep also
+  // matches — "Chiltern Wills LLP" is a will writer that happens to be an LLP, and the plain test threw it
+  // out with the solicitors.
+  const nameSoft = cfg.nameSoftDrop ? new RegExp(cfg.nameSoftDrop,'i') : null;
+  const nameKeep = cfg.nameKeep ? new RegExp(cfg.nameKeep,'i') : null;
+  const wrongName = n => (nameDrop && nameDrop.test(n)) || (nameSoft && nameSoft.test(n) && !(nameKeep && nameKeep.test(n)));
   let droppedByName = 0, reassigned = 0, outsideEW = 0;
   // One firm, one row for the whole run. Adjacent areas return the same firms, and a firm placed under
   // its own postcode's area can be found from several searches — de-duplicating per area stored it once
@@ -1342,7 +1349,7 @@ async function runMapsSweep(){
           seen.add(dom);                 // judged once — a firm dropped here is not re-counted by the next search term
           const cat = p.category||'';
           if(!keep.test(cat) || drop.test(cat)) continue;
-          if(nameDrop && nameDrop.test(p.name||'')){ droppedByName++; continue; }
+          if(wrongName(p.name||'')){ droppedByName++; continue; }
           // Which area a firm belongs to is decided by ITS OWN postcode, not by which search found it.
           // The old gate kept a result only when its postcode matched the area being swept, which in a
           // dense region threw away most of what Google returned: searching EC brought back genuine will
@@ -1381,7 +1388,7 @@ async function runMapsSweep(){
 
   $('mapsRunBtn').disabled = false;
   if(!MAPS.rows.length){ st.textContent = `Nothing found. ${searches} search(es) used.`; $('mapsGridBtn').disabled=true; return; }
-  if(droppedByName) log(`${droppedByName} firm(s) dropped on their NAME (${cfg.nameDrop}) — wrong trade for “${trade}” whatever Google filed them as.`,'wn');
+  if(droppedByName) log(`${droppedByName} firm(s) dropped on their NAME (${cfg.nameDrop}${cfg.nameSoftDrop?' · '+cfg.nameSoftDrop+' unless '+cfg.nameKeep:''}) — wrong trade for “${trade}” whatever Google filed them as.`,'wn');
   if(reassigned) log(`${reassigned} firm(s) were found from one area's search but belong to another by their own postcode — stored under their own area, not thrown away.`,'ok');
   if(outsideEW) log(`${outsideEW} firm(s) skipped — their postcode is outside England & Wales.`,'wn');
   st.innerHTML = `<b>${MAPS.rows.length} firms found and saved</b> across ${areaNo} area(s) · ${searches} search(es) used.`+

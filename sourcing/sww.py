@@ -27,12 +27,23 @@ SOCIETY_OWN_POSTCODE = "LN6 3LQ"      # the Society's Lincoln office, in every p
 BADGE_HOSTS = re.compile(r"willwriters\.com|vimeo|youtube|facebook|twitter|x\.com|linkedin|instagram|fsb\.org|what3words|google|gstatic|w3\.org|wp\.org|gravatar|schema\.org|trustpilot|checkatrade|yell\.com", re.I)
 
 
-def fetch(url):
+CACHE = os.path.join(os.path.expanduser("~"), ".cache", "pp-sww")
+os.makedirs(CACHE, exist_ok=True)
+
+
+def fetch(url, cache=True):
+    """Member pages are cached for a day — a re-run after a parser fix should not re-crawl 1,376 pages."""
+    key = os.path.join(CACHE, re.sub(r"[^a-z0-9]+", "_", url.lower())[:150] + ".html")
+    if cache and os.path.exists(key) and time.time() - os.path.getmtime(key) < 86400:
+        return open(key, encoding="utf-8", errors="ignore").read()
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
-                return r.read().decode("utf-8", "ignore")
+                page = r.read().decode("utf-8", "ignore")
+                if cache:
+                    open(key, "w", encoding="utf-8").write(page)
+                return page
         except Exception as e:
             if attempt == 2:
                 print(f"  gave up on {url}: {e}")
@@ -114,7 +125,19 @@ def parse(page, url):
                   + (f" · covers: {clean(covered.group(1))}" if covered else "")
                   + (f" · profile: {blurb[:500]}" if blurb else "") + f" · {url}"),
         "last_verified": time.strftime("%Y-%m-%d"),
+        "_covered": clean(covered.group(1)) if covered else "",
     }
+
+
+HARD_WRONG = re.compile(r"solicitor|barrister|chambers|conveyanc|notar", re.I)   # always the wrong trade
+SOFT_WRONG = re.compile(r"\bllp\b|\blaw\b", re.I)                                 # wrong unless…
+IS_WILL_WRITER = re.compile(r"\bwills?\b|will\s*writ", re.I)                       # …the name says wills
+
+
+def wrong_trade(name):
+    """Same rule as trades.json nameDrop / nameSoftDrop / nameKeep — keep the three in step."""
+    n = name or ""
+    return bool(HARD_WRONG.search(n) or (SOFT_WRONG.search(n) and not IS_WILL_WRITER.search(n)))
 
 
 def main():
@@ -134,6 +157,20 @@ def main():
         if not r["name"]:
             skipped.append((url, "no name"))
             continue
+        # The Society admits solicitors too. Same test as the sweep and the purge: a name that says
+        # Solicitors, LLP, Law or Chambers is the wrong trade here.
+        if wrong_trade(r["name"]):
+            skipped.append((r["name"], "solicitors' practice"))
+            continue
+        # No address, but "Postcode(s) Covered: NR, IP areas" — a home-based member. File under the first
+        # area they say they cover rather than throwing them away.
+        if r["area"] not in EW and r.get("_covered"):
+            for tok in re.findall(r"\b([A-Z]{1,2})\b", r["_covered"].upper()):
+                if tok in EW:
+                    r["area"] = tok
+                    r["notes"] += " · placed by stated coverage (no premises address)"
+                    break
+        r.pop("_covered", None)
         if r["area"] not in EW:
             skipped.append((r["name"], r["postcode"] or "no postcode"))
             continue
@@ -164,6 +201,17 @@ def main():
     if not APPLY:
         print("\nNothing written to the store. Re-run with --apply to add them.")
         return
+    # The store's key is name + area, and Postgres refuses an insert that carries the same key twice in
+    # one command — a body with two branches in one area, or two members trading under one name, killed a
+    # whole batch of a hundred. Fold those into one row first, keeping the fullest.
+    fullest = {}
+    for r in rows:
+        k = (r["name"].strip().lower(), r["area"])
+        if k not in fullest or sum(bool(v) for v in r.values()) > sum(bool(v) for v in fullest[k].values()):
+            fullest[k] = r
+    if len(fullest) < len(rows):
+        print(f"  {len(rows) - len(fullest)} duplicate name+area row(s) folded before writing")
+    rows = list(fullest.values())
     written = 0
     for i in range(0, len(rows), 100):
         d = kb({"action": "merge", "rows": rows[i:i + 100]})
