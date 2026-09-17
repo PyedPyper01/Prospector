@@ -108,6 +108,16 @@ Return, for each firm, a strict JSON object. Assess:
      of Openwork, Quilter, Intrinsic or True Potential. Being an Appointed Representative is NOT restricted
      advice: many independently owned whole-of-market firms are ARs of a network purely to hold FCA
      authorisation. Judge the ADVICE, not the authorisation route.
+   · FOR WILL-WRITING CATEGORIES ONLY (will writers, LPA drafters, estate planning services): a SOLICITORS'
+     PRACTICE is the WRONG TRADE, however many wills it drafts. This category is the independent will
+     writer — typically a member of the Society of Will Writers (SWW) or the Institute of Professional
+     Willwriters (IPW), often working from a home office or a single high-street unit. A firm whose own
+     site says it is regulated by the Solicitors Regulation Authority, gives an SRA number, calls itself
+     Solicitors, an LLP or a law firm, or lists conveyancing, litigation, family, employment or personal
+     injury work alongside wills, is a solicitors' practice: set verdict EXCLUDE with reason "SRA-regulated
+     solicitors — belongs under Probate solicitors". SWW or IPW membership is a strong on-trade signal and
+     a real credential. Do not exclude a will writer merely because they also draft LPAs or set up trusts —
+     that IS the trade.
    · EXCLUDE — independent=false with a group_quote, OR clearly the WRONG TRADE: a DIFFERENT trade than the searched category (e.g. a hardware shop or auto/car-key specialist when "locksmith" was searched, a garden centre when "florist" was searched). Do NOT exclude a firm merely for not being deathcare-related — if it IS the searched trade, it is on-trade.
    · APPROVE — independent (true or null-but-no-red-flags) AND fit>=6 AND quality>=5 AND a genuine, useful independent of the searched trade.
    · REVIEW  — promising but something needs a human eye (independence unclear, mid scores, register flagged).

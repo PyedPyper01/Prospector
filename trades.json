@@ -125,11 +125,14 @@
     "drop": "tax preparation service|bookkeep|payroll|marketing"
   },
   "Will writers & LPA drafters": {
+    "_why": "This trade is the INDEPENDENT will writer — the SWW/IPW member working from a home office or a high-street unit — not the solicitors' practice that also drafts wills. The old filter kept the Google categories 'lawyer', 'law firm' and 'solicitor' outright, so 61% of the 2,441 rows captured were solicitors (1,057 of them filed by Google as 'Law firm'). Solicitors belong under Probate solicitors; here they are the wrong trade. Three gates now: the search asks for will writers, not services in general; 'Law firm'/'Solicitor'/'Lawyer' categories are dropped instead of kept; and a NAME carrying Solicitors, LLP, Law, Chambers or Barrister is dropped whatever Google filed it as, since a solicitors' practice almost always says so in its name and a will writer almost never does. Vet & Rank then excludes anything whose own site says it is SRA-regulated.",
     "terms": [
+      "will writer",
       "will writing service"
     ],
-    "keep": "legal services|estate planning|lawyer|law firm|solicitor|will",
-    "drop": "non-profit|charity|personal injury|recruit"
+    "keep": "will|estate planning|legal services|paralegal",
+    "drop": "solicitor|law firm|lawyer|barrister|attorney at law|conveyanc|notary|personal injury|immigration|divorce|family law|non-profit|charity|recruit",
+    "nameDrop": "solicitor|\\bllp\\b|\\blaw\\b|barrister|chambers|conveyanc|notar"
   },
   "RICS chartered surveyors": {
     "terms": [

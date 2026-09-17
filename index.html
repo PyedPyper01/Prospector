@@ -1301,6 +1301,11 @@ async function runMapsSweep(){
   if(!cfg){ st.textContent = `"${trade}" is sourced from a trade directory, not Google Maps — see the sourcing instruction.`; return; }
 
   const keep = new RegExp(cfg.keep,'i'), drop = new RegExp(cfg.drop,'i');
+  // Optional: a firm to drop on its NAME, whatever Google filed it as. Google's category is a weak signal
+  // for some trades — it puts solicitors' practices under "Legal services" alongside will writers — while
+  // the name is a strong one: a solicitors' firm almost always says Solicitors, LLP or Law in its name.
+  const nameDrop = cfg.nameDrop ? new RegExp(cfg.nameDrop,'i') : null;
+  let droppedByName = 0;
   const PC = /\b([A-Z]{1,2})\d{1,2}[A-Z]?\s*\d[A-Z]{2}\b/i;
   MAPS.rows = []; MAPS.stop = false;
   $('mapsRunBtn').disabled = true;
@@ -1332,6 +1337,7 @@ async function runMapsSweep(){
           if(seen.has(dom)) continue;
           const cat = p.category||'';
           if(!keep.test(cat) || drop.test(cat)) continue;
+          if(nameDrop && nameDrop.test(p.name||'')){ droppedByName++; continue; }
           const m = PC.exec(p.address||'');
           if(!m || m[1].toUpperCase()!==area) continue;
           seen.add(dom); kept++;
@@ -1358,7 +1364,9 @@ async function runMapsSweep(){
 
   $('mapsRunBtn').disabled = false;
   if(!MAPS.rows.length){ st.textContent = `Nothing found. ${searches} search(es) used.`; $('mapsGridBtn').disabled=true; return; }
+  if(droppedByName) log(`${droppedByName} firm(s) dropped on their NAME (${cfg.nameDrop}) — wrong trade for “${trade}” whatever Google filed them as.`,'wn');
   st.innerHTML = `<b>${MAPS.rows.length} firms found and saved</b> across ${areaNo} area(s) · ${searches} search(es) used.`+
+    (droppedByName?` ${droppedByName} dropped by name.`:'')+
     (MAPS.stop?' <b>Stopped early</b> — everything found so far is saved.':'')+
     ' They are in the database now — or load them into the grid below.';
   $('mapsGridBtn').disabled = false;
